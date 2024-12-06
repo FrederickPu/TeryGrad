@@ -58,7 +58,19 @@ end DType
 
 def ConstType := Float ⊕ Int ⊕ Bool
 
+namespace ConstType
+
 instance : Coe Int ConstType :=
 ⟨fun x => Sum.inr <| Sum.inl x⟩
 
-#check ((-1:Int) : ConstType)
+def neg (x : ConstType) : ConstType :=
+match x with
+| Sum.inl x₁ => Sum.inl (-x₁)
+| Sum.inr x' =>
+  match x' with
+  | Sum.inl x₂ => Sum.inr (Sum.inl (-x₂))
+  | Sum.inr x₃ => Sum.inr (Sum.inr (!x₃))
+
+instance : Neg ConstType := ⟨neg⟩
+
+end ConstType
