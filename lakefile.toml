@@ -1,0 +1,10 @@
+name = "TeryGrad"
+version = "0.1.0"
+defaultTargets = ["terygrad"]
+
+[[lean_lib]]
+name = "TeryGrad"
+
+[[lean_exe]]
+name = "terygrad"
+root = "Main"
