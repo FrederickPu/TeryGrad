@@ -71,3 +71,21 @@ def exampleNestedList : NestedList Nat :=
   NestedList.cons₂ (NestedList.cons₁ 1 (NestedList.cons₁ 2 NestedList.nil)) NestedList.nil -- [[1, 2]]
 
 -- TODO:: make a macro parser for it
+
+/--
+The notation typeclass for heterogeneous floor division.
+This enables the notation `a ⌊/⌋ b : γ` where `a : α`, `b : β`.
+-/
+class HFDiv (α : Type u) (β : Type v) (γ : outParam (Type w)) where
+  hFDiv : α → β → γ
+
+/--
+The notation typeclass for floor division.
+-/
+class FDiv (α : Type u) where
+  hFDiv : α → α → α
+
+instance {α : Type u} [FDiv α] : HFDiv α α α :=
+  ⟨fun a₁ a₂ => FDiv.hFDiv a₁ a₂⟩
+
+macro_rules | `($x "⌊/⌋" $y)   => `(binop% HFDiv.hFDiv $x $y)
