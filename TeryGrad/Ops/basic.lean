@@ -38,6 +38,9 @@ inductive Ops
 
 namespace Ops
 
+-- Helper functiions for Ops
+
+def d := 0
 -- # https://en.wikipedia.org/wiki/Identity_element
 -- def identity_element(op:Ops, dt:DType) -> ConstType: return dtypes.as_const({Ops.ADD:0, Ops.MUL:1, Ops.MAX:dtypes.min(dt)}[op], dt)
 
@@ -95,6 +98,34 @@ inductive UOp
   (dtype : DType)
   (src : List UOp)
   (arg : Option String)
+
+namespace UOp
+variable (x : UOp)
+def op :=
+  match x with
+  | mk op _ _ _ => op
+def dtype :=
+  match x with
+  | mk _ dtype _ _ => dtype
+def src :=
+  match x with
+  | mk _ src _ _ => src
+def arg :=
+  match x with
+  | mk _ _ _ arg => arg
+end UOp
+
+structure UPat :=
+  uop : UOp
+  name : String
+
+namespace UPat
+variable (x : UPat)
+def op := x.uop.op
+def dtype := x.uop.dtype
+def src := x.uop.src
+def arg := x.uop.arg
+end UPat
 
 class SimpleMathTrait (α : Type u) :=
   alu : α → Ops → List α → α

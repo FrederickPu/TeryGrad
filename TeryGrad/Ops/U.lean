@@ -1,5 +1,7 @@
 import TeryGrad.Ops.basic
 
+-- method definitions for UOp and UPat
+
 namespace UOp
 def alu : UOp → Ops → List Uop → UOp := sorry
 -- out_dtype = (self, *src)[-1].dtype
