@@ -4,12 +4,23 @@ class Iterable (α : Type u) (β : outParam (Type v)) :=
   (iter : α → α)       -- Initializes the iterator
   (next : α → Option (β × α)) -- Retrieves the next value and updates the iterator state
 
+/--
+  Map can have multiple implmentations. For example HashMap (Map (HasMap β γ) β γ) is an implementation.
+  and HashMap using int256 instead of int64 would also work
+-/
 class Map (α : Type u) (β : Type v) (γ : outParam (Type w)) :=
   (keys : α → List β)
   (get : α → β → Option γ)
-  (h₁ (a : α) : (keys a).Nodup) -- there are no duplicates in the keys list
-  (h₂ (a : α) : ∀ k, k ∈ keys a ↔ get a k ≠ none) -- a[k] is defined if k ∈ a.keys()
+  (nodup (a : α) : (keys a).Nodup) -- there are no duplicates in the keys list
+  (get_defined_iff (a : α) : ∀ k, k ∈ keys a ↔ get a k ≠ none) -- a[k] is defined if k ∈ a.keys()
 
+/--
+  Set can have multiple implmentations. For example HashSet (Set (HashSet β) β) is an implementation.
+  and HashSet using int256 instead of int64 would also work
+-/
+class Set (α : Type u) (β : Type v) :=
+  (elems : α → List β)
+  (nodup (a : α) : (elems a).Nodup)
 
 instance : Iterable (List β) β :=
 {
@@ -70,7 +81,23 @@ instance  {α : Type} [ToString α] : ToString (NestedList α) :=
 def exampleNestedList : NestedList Nat :=
   NestedList.cons₂ (NestedList.cons₁ 1 (NestedList.cons₁ 2 NestedList.nil)) NestedList.nil -- [[1, 2]]
 
--- TODO:: make a macro parser for it
+
+syntax "N[" term,* "]" : term
+
+macro_rules
+  | `(N[]) => `(NestedList.nil)
+  | `(N[N[$xs,*]]) => `(NestedList.cons₂ N[$xs,*] NestedList.nil)
+  | `(N[N[$xs,*], $ys,*]) => `(NestedList.cons₂ N[$xs,*] N[$ys,*])
+  | `(N[$x]) => `(NestedList.cons₁ $x NestedList.nil)
+  | `(N[$x, $xs,*]) => `(NestedList.cons₁ $x N[$xs,*])
+
+#eval N[N[1,2]]
+-- N[N[1, 2]]
+#eval N[1,N[2,3],4,N[N[5,6],7]]
+-- N[1, N[2, 3], 4, N[N[5, 6], 7]]
+
+-- TODO:: make it so you only need to use N once that is you can use
+-- N[1, [1, 2]] instead of N[1, N[2, 3]]
 
 /--
 The notation typeclass for heterogeneous floor division.
