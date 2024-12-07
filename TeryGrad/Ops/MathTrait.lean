@@ -2,6 +2,10 @@ import TeryGrad.Ops.basic
 import TeryGrad.Ops.UOp
 import TeryGrad.FromPython
 
+/--
+  This file contains method definitions for SimpleMathTrait and MathTrait
+-/
+
 def ConstLike := ConstType ⊕ UOp ⊕ List ConstType
 
 instance : Coe Int ConstLike := ⟨fun x => Sum.inl (x:ConstType)⟩
@@ -21,6 +25,10 @@ instance {α : Type u} {β : Type v} : Coe α (α ⊕ β) := by infer_instance
 namespace SimpleMathTrait
 variable {α : Type u} [SimpleMathTrait α]
 
+/--
+  technically, if x is a SimpleMathTrait that isn't a MathTrait, then should get passed through const_like
+  however, this only applies to Tensor and Tensor doesn't even implement const_like or alu
+-/
 def ufix (self : α) : ConstLike ⊕ α → α
 | Sum.inl x => const_like self x
 | Sum.inr x => x
@@ -75,14 +83,14 @@ instance : Xor α := ⟨fun x y => xor x (Sum.inr y)⟩
 
 /- Right Heterogenous
 -/
-instance : HAdd α (ConstLike ⊕ α) α := ⟨fun x y => add x y⟩
-instance : HSub α (ConstLike ⊕ α) α := ⟨fun x y => sub x y⟩
-instance : HMul α (ConstLike ⊕ α) α := ⟨fun x y => mul x y⟩
-instance : HDiv α (ConstLike ⊕ α) α := ⟨fun x y => div x y⟩
-instance : HFDiv α (ConstLike ⊕ α) α := ⟨fun x y => idiv x y⟩
-instance : HAnd α (ConstLike ⊕ α) α := ⟨fun x y => bitwise_and x y⟩
-instance : HOr α (ConstLike ⊕ α) α := ⟨fun x y => bitwise_or x y⟩
-instance : HXor α (ConstLike ⊕ α) α := ⟨fun x y => xor x y⟩
+instance : HAdd α (ConstLike) α := ⟨fun x y => add x y⟩
+instance : HSub α (ConstLike) α := ⟨fun x y => sub x y⟩
+instance : HMul α (ConstLike) α := ⟨fun x y => mul x y⟩
+instance : HDiv α (ConstLike) α := ⟨fun x y => div x y⟩
+instance : HFDiv α (ConstLike) α := ⟨fun x y => idiv x y⟩
+instance : HAnd α (ConstLike) α := ⟨fun x y => bitwise_and x y⟩
+instance : HOr α (ConstLike) α := ⟨fun x y => bitwise_or x y⟩
+instance : HXor α (ConstLike) α := ⟨fun x y => xor x y⟩
 
 /- Homogenous
 -/
@@ -97,20 +105,27 @@ instance : Xor α := ⟨fun x y => xor x y⟩
 
 /- Left Heterogenous
 -/
-instance : HAdd (ConstLike ⊕ α) α α := ⟨fun x y => add y x true⟩
-instance : HSub (ConstLike ⊕ α) α α := ⟨fun x y => sub y x true⟩
-instance : HMul (ConstLike ⊕ α) α α := ⟨fun x y => mul y x true⟩
-instance : HDiv (ConstLike ⊕ α) α α := ⟨fun x y => div y x true⟩
-instance : HFDiv (ConstLike ⊕ α) α α := ⟨fun x y => idiv y x true⟩
-instance : HAnd (ConstLike ⊕ α) α α := ⟨fun x y => bitwise_and y x true⟩
-instance : HOr (ConstLike ⊕ α) α α := ⟨fun x y => bitwise_or y x true⟩
-instance : HXor (ConstLike ⊕ α) α α := ⟨fun x y => xor y x true⟩
+instance : HAdd (ConstLike) α α := ⟨fun x y => add y x true⟩
+instance : HSub (ConstLike) α α := ⟨fun x y => sub y x true⟩
+instance : HMul (ConstLike) α α := ⟨fun x y => mul y x true⟩
+instance : HDiv (ConstLike) α α := ⟨fun x y => div y x true⟩
+instance : HFDiv (ConstLike) α α := ⟨fun x y => idiv y x true⟩
+instance : HAnd (ConstLike) α α := ⟨fun x y => bitwise_and y x true⟩
+instance : HOr (ConstLike) α α := ⟨fun x y => bitwise_or y x true⟩
+instance : HXor (ConstLike) α α := ⟨fun x y => xor y x true⟩
 
 #check 1 / 2
 instance [Coe α Bool] : BEq α := ⟨fun x y => (eq x (Sum.inr y) : α)⟩
 instance [Coe α Bool] : LT α := ⟨fun x y => alu x Ops.CMPLT [ufix x (Sum.inr y)]⟩
 -- TODO :: make this less scuffed by having HLT and HLE
 instance [Coe α Bool] : LE α := ⟨fun x y => (logical_not (alu x Ops.CMPLT [ufix x (Sum.inr y)]) : α)⟩
+
+end SimpleMathTrait
+
+namespace MathTrait
+
+variable {α : Type u} [MathTrait α]
+open SimpleMathTrait
 
 -- from MathTrait in the python implementation
 -- # TODO: move to Tensor when new backward is done
@@ -135,4 +150,4 @@ def sin (self : α) : α := alu self Ops.SIN []
 def log2 (self : α) : α := alu self Ops.LOG2 []
 def exp2 (self : α) : α := alu self Ops.EXP2 []
 
-end SimpleMathTrait
+end MathTrait
