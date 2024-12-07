@@ -1,14 +1,10 @@
 import TeryGrad.Ops.basic
-import TeryGrad.Ops.UOp
+import TeryGrad.Ops.U
 import TeryGrad.FromPython
 
-/--
+/-!
   This file contains method definitions for SimpleMathTrait and MathTrait
 -/
-
-def ConstLike := ConstType ⊕ UOp ⊕ List ConstType
-
-instance : Coe Int ConstLike := ⟨fun x => Sum.inl (x:ConstType)⟩
 
 /--
   the below coecersion instance should be in utils or smth
@@ -42,6 +38,8 @@ def eq (self : α) (x : ConstLike ⊕ α) : α := logical_not (ne self x)
 
 def mul (self : α) (x : ConstLike ⊕ α) (reverse : Bool := false) : α := _binop self Ops.MUL x reverse
 def add (self : α) (x : ConstLike ⊕ α) (reverse : Bool := false) : α := _binop self Ops.ADD x reverse
+
+instance : Inhabited α := sorry
 
 def neg (self : α) : α := match dtype self with
   | none => panic! s!"MathTraits __neg__ requires a dtype, "

@@ -17,4 +17,9 @@ instance : MathTrait UOp := {
 }
 
 def UOp.default (op : Ops) := UOp.mk op DType.void [] none
+
+def const : DType → Bool → UOp := sorry
+
+instance : Coe UOp Bool := sorry
+
 end UOp

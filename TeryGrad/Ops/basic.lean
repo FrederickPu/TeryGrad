@@ -127,9 +127,15 @@ def src := x.uop.src
 def arg := x.uop.arg
 end UPat
 
+def ConstLike := ConstType ⊕ UOp ⊕ List ConstType
+instance : Coe Int ConstLike := ⟨fun x => Sum.inl (x:ConstType)⟩
+
 class SimpleMathTrait (α : Type u) :=
   alu : α → Ops → List α → α
   const_like : α → ConstLike → α
   dtype : α → Option DType
 
 class MathTrait (α : Type u) extends SimpleMathTrait α :=
+
+abbrev SInt := Int ⊕ UOp
+abbrev Variable := UOp
