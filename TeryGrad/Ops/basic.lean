@@ -41,7 +41,7 @@ namespace Ops
 -- Helper functiions for Ops
 
 def d := 0
--- # https://en.wikipedia.org/wiki/Identity_element
+-- https://en.wikipedia.org/wiki/Identity_element
 -- def identity_element(op:Ops, dt:DType) -> ConstType: return dtypes.as_const({Ops.ADD:0, Ops.MUL:1, Ops.MAX:dtypes.min(dt)}[op], dt)
 
 -- def can_pad(u:UOp, edges:Dict[UOp, UOp], visisted:Set[UOp]) -> bool:
@@ -88,7 +88,6 @@ def d := 0
 end Ops
 
 inductive MultiLazyBuffer
-inductive LazyBuffer
 inductive Tensor
 
 -- like a variable
@@ -97,7 +96,7 @@ inductive UOp
   (op : Ops)
   (dtype : DType)
   (src : List UOp)
-  (arg : Option String)
+  (arg : Option (ConstType ⊕ UOp ⊕ List ConstType))
 
 namespace UOp
 variable (x : UOp)
