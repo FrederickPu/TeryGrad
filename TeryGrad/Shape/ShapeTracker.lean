@@ -1,5 +1,4 @@
 import TeryGrad.Ops.basic
-import TeryGrad.Ops.U
 import TeryGrad.Ops.MathTrait
 import TeryGrad.Shape.View
 
@@ -7,9 +6,6 @@ def views_to_indexed_uops (views: List View) (_idxs:Option (List UOp) := None) :
   sorry
 def views_to_real_strides (views: List View) (ignore_valid : Bool := false) : List (Option SInt) :=
  sorry
-
-structure ShapeTracker :=
-  views : List View
 
 namespace ShapeTracker
 

@@ -1,6 +1,6 @@
 import TeryGrad.Ops.basic
-import TeryGrad.Ops.U
 import TeryGrad.FromPython
+import TeryGrad.Ops.U
 
 /-!
   This file contains method definitions for SimpleMathTrait and MathTrait
@@ -51,7 +51,6 @@ def neg (self : α) : α := match dtype self with
 
 instance : Neg α := ⟨neg⟩
 
-instance : SimpleMathTrait UOp := inferInstance
 instance : Neg UOp := inferInstance
 
 def neg' (x : ConstLike) : ConstLike :=

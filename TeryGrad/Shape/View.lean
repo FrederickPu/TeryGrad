@@ -1,8 +1,7 @@
 import TeryGrad.Ops.basic
-import TeryGrad.Ops.U
 import TeryGrad.Ops.MathTrait
 
-namespace View
+instance : BEq SInt := sorry
 
 def canonicalize_strides (shape: List SInt) (strides: List SInt) : List SInt :=
   (shape.zip strides).map (fun ⟨s, st⟩ => if s == (1:Int) then (0:Int) else st)
@@ -14,13 +13,6 @@ def _reshape_mask (_mask: Option (List (SInt × SInt))) (old_shape: List SInt) (
 
 def un1d (shape:List SInt) (offs:SInt) : List SInt :=
   sorry
-
-structure View :=
-  shape : List SInt
-  strides : List SInt
-  offset : SInt
-  mask : Option (List (SInt × SInt))
-  contiguous : Bool
 
 namespace View
 

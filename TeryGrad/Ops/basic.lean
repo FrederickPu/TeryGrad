@@ -40,7 +40,7 @@ namespace Ops
 
 -- Helper functiions for Ops
 
-def d := 0
+def value (self : Ops) : Int := sorry
 -- https://en.wikipedia.org/wiki/Identity_element
 -- def identity_element(op:Ops, dt:DType) -> ConstType: return dtypes.as_const({Ops.ADD:0, Ops.MUL:1, Ops.MAX:dtypes.min(dt)}[op], dt)
 
@@ -90,13 +90,40 @@ end Ops
 inductive MultiLazyBuffer
 inductive Tensor
 
+mutual
+inductive View
+| mk
+  (shape : List (Int ⊕ UOp))
+  (strides : List (Int ⊕ UOp))
+  (offset : (Int ⊕ UOp))
+  (mask : Option (List ((Int ⊕ UOp) × (Int ⊕ UOp))))
+  (contiguous : Bool)
+
+inductive ShapeTracker
+| mk (views : List View)
+
 -- like a variable
 inductive UOp
 | mk
   (op : Ops)
   (dtype : DType)
   (src : List UOp)
-  (arg : Option (ConstType ⊕ UOp ⊕ List ConstType))
+  (arg : Option ((ConstType ⊕ UOp ⊕ List ConstType) ⊕ ShapeTracker))
+end
+
+namespace View
+variable (x : View)
+def shape : View → List (Int ⊕ UOp) :=
+ fun ⟨a, b, c, d, e⟩ => a
+def strides : View → List (Int ⊕ UOp) :=
+ fun ⟨a, b, c, d, e⟩ => b
+def offset : View → Int ⊕ UOp :=
+ fun ⟨a, b, c, d, e⟩ => c
+def mask : View → Option (List ((Int ⊕ UOp) × (Int ⊕ UOp))) :=
+ fun ⟨a, b, c, d, e⟩ => d
+def contiguous : View → Bool :=
+ fun ⟨a, b, c, d, e⟩ => e
+end View
 
 namespace UOp
 variable (x : UOp)
@@ -108,10 +135,11 @@ def dtype :=
   | mk _ dtype _ _ => dtype
 def src :=
   match x with
-  | mk _ src _ _ => src
+  | mk _ _ src _ => src
 def arg :=
   match x with
   | mk _ _ _ arg => arg
+
 end UOp
 
 structure UPat :=
@@ -136,5 +164,5 @@ class SimpleMathTrait (α : Type u) :=
 
 class MathTrait (α : Type u) extends SimpleMathTrait α :=
 
-abbrev SInt := Int ⊕ UOp
 abbrev Variable := UOp
+abbrev SInt := Int ⊕ UOp
