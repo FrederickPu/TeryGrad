@@ -116,3 +116,16 @@ instance {α : Type u} [FDiv α] : HFDiv α α α :=
   ⟨fun a₁ a₂ => FDiv.hFDiv a₁ a₂⟩
 
 macro_rules | `($x "⌊/⌋" $y)   => `(binop% HFDiv.hFDiv $x $y)
+
+
+namespace List
+/--
+Constructs the union of two lists, by inserting the elements of `l₁` in reverse order to `l₂`.
+As a result, `l₂` will always be a suffix, but only the last occurrence of each element in `l₁`
+will be retained (but order will otherwise be preserved).
+-/
+@[inline] protected def union [BEq α] (l₁ l₂ : List α) : List α := foldr .insert l₂ l₁
+
+instance [BEq α] : Union (List α) := ⟨List.union⟩
+
+end List
