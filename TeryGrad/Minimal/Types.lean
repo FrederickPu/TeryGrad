@@ -11,7 +11,7 @@ structure Path (shape : List Nat) where
     lenLt : path.length < shape.length
     inBounds : ∀ i : Fin path.length, path.get i < shape.get ⟨i.val, Nat.lt_trans i.isLt lenLt⟩
 
-def NArray.depth {α : Type u} {n : Nat} (array : NArray α n) : Nat := n
+def NArray.depth {α : Type u} {n : Nat} (_ : NArray α n) : Nat := n
 
 def NArray.length {α : Type u} {n : Nat} : (array : NArray α n) → Nat
 | nil n => 0
@@ -93,23 +93,26 @@ structure DVector {n : Nat} (p : Fin n → Type u) where
    - α is the data type
    - β is the grad type
 -/
-structure FunctionCtx (α : Type u) (β : Type v) :=
-    parents : List (Sigma (fun shape : List Nat => Tensor α shape))
-    saved_tensors : List (Sigma (fun shape : List Nat => Tensor β shape))
+structure FunctionCtx (α : Type u) (β : Type v) (numParents : Nat) (saveShapes : Array (List Nat)) where
+    parents : Vector ((shape : List Nat) × (ETensor α β shape)) numParents
+    saved_tensors : ShapedTensorVector β saveShapes
 
 /-
    api carrying code for tinygrad's Function class
-   Note that we do not need to distinguish between __init__ and forward
-   since all init does is create a context containing the parents and an empty saved_tensors list
-   instead we will take the parents list as input in the forward pass.
-   Note about parent:
-    if you have Z = X * Y, then the function Z will have parents X and Y
+   if you have Z = X * Y, then the function Z will have parents X and Y
+
+   Technically: init, forward and backward can be computed together in that order.
+   However, spliting up into multiple stages allows us to more closely follow the tinygrad codebase.
+   Additionally, it might allow us to take advantage of certain caching properties of the lean compiler and ir optimizer.
+
+   We omit the finite function since it only initializes the parents. We instead pass parents into the forward pass to have a better type signature for FunctionCtx.
 -/
-structure EFunction (α : Type u) (β : Type v) (shapes : Array (List Nat)) (outShape : List Nat) :=
+structure EFunction (α : Type u) (β : Type v) (shapes : Array (List Nat)) (outShape : List Nat) where
+    saveShapes : Array (List Nat)
     -- take in a context and data tensors (α) to produce an output tensor and function context
-    forward : ShapedTensorVector α shapes → Tensor α outShape × FunctionCtx α β
+    forward : (parents : Vector ((shape : List Nat) × (ETensor α β shape)) shapes.size) → ShapedTensorVector α shapes → Tensor α outShape × FunctionCtx α β shapes.size saveShapes
     -- computes the gradient based on the saved_tensors in the FunctionCtx
-    backward : FunctionCtx α β → Tensor β outShape → ShapedTensorVector β shapes
+    backward : FunctionCtx α β shapes.size saveShapes → Tensor β outShape → ShapedTensorVector β shapes
     -- TODO :: add an additional condition that assures forward and backward compose properly
 
 variable {α : Type u} {β : Type v}
@@ -150,17 +153,12 @@ instance {α : Type u} [Inhabited α] : Inhabited ((shape : List Nat) × (Tensor
 instance {α : Type u} {shape : List Nat} [Add α] : Add (Tensor α shape) := sorry
 def add (α : Type u) [Inhabited α] [Add α] (β : Type v) [Add β] (shape : List Nat): EFunction α β #[shape, shape] shape :=
 {
-    forward := fun x => Id.run do
-        -- TODO:: need nat based get for tensorVector
+    saveShapes := #[]
+    forward :=
+     fun parents x =>
         let x1 : Tensor α shape := x.get ⟨0, by simp⟩
         let x2 : Tensor α shape := x.get ⟨1, by simp⟩
-        ⟨x1 + x2, ⟨#[], ⟨fun x => by {
-            have := x.isLt
-            simp at this
-        }⟩, #[], ⟨fun x => by {
-            have := x.isLt
-            simp at this
-        }⟩⟩⟩
+        ⟨x1 + x2, ⟨parents, ⟨#v[], fun ⟨i, hi⟩ => by simp at hi⟩⟩⟩
     backward := fun ⟨parents, saved_tensors⟩ grad_output => Id.run do
         ⟨⟨#[⟨shape, grad_output⟩, ⟨shape, grad_output⟩], by simp⟩,
             by {
@@ -174,3 +172,5 @@ def add (α : Type u) [Inhabited α] [Add α] (β : Type v) [Add β] (shape : Li
                 }
             }⟩
 }
+
+#check Vector
