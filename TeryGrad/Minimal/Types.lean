@@ -65,7 +65,17 @@ structure Tensor (α : Type u) (shape : List Nat) : Type u where
 -/
 structure ShapedTensorVector (α : Type u) (shapes : Array (List Nat)) where
     tensorVector : Vector (Sigma (fun shape : List Nat => Tensor α shape)) shapes.size
-    hasShape : ∀ i : Fin shapes.size, (tensorVector.get i).1 = shapes[i]
+    -- we use this definition instead of the quantifier definition for the constructor so that shape matching can be provided using `rfl`
+    shapesMatch : (List.finRange shapes.size).map (fun i => (tensorVector.get i).1) = (List.finRange shapes.size).map (fun i => shapes[i])
+
+def ShapedTensorVector.hasShape {α : Type u} {shapes : Array (List Nat)} (s : ShapedTensorVector α shapes) :
+    ∀ i : Fin (shapes.size), (s.tensorVector.get i).1 = shapes[i] := by
+    intro i
+    have : ((List.finRange shapes.size).map (fun i => (s.tensorVector.get i).fst)).get ⟨i.val, by simp⟩ = ((List.finRange shapes.size).map (fun i => shapes[i])).get ⟨i.val, by simp⟩ := by
+        have := s.shapesMatch
+        apply List.get_of_eq
+        assumption
+    simp at this
 
 def ShapedTensorVector.get {α : Type u} {shapes : Array (List Nat)} (x : ShapedTensorVector α shapes) (i : Fin shapes.size) :
     Tensor α shapes[i] := by
@@ -158,19 +168,10 @@ def add (α : Type u) [Inhabited α] [Add α] (β : Type v) [Add β] (shape : Li
      fun parents x =>
         let x1 : Tensor α shape := x.get ⟨0, by simp⟩
         let x2 : Tensor α shape := x.get ⟨1, by simp⟩
-        ⟨x1 + x2, ⟨parents, ⟨#v[], fun ⟨i, hi⟩ => by simp at hi⟩⟩⟩
+        ⟨x1 + x2, ⟨parents, ⟨#v[], rfl⟩⟩⟩
     backward := fun ⟨parents, saved_tensors⟩ grad_output => Id.run do
         ⟨⟨#[⟨shape, grad_output⟩, ⟨shape, grad_output⟩], by simp⟩,
-            by {
-                intro i
-                match i with
-                | ⟨i, hi⟩ => {
-                    simp at hi
-                    match i with
-                    | 0 => rfl
-                    | 1 => rfl
-                }
-            }⟩
+            rfl⟩
 }
 
 #check Vector
