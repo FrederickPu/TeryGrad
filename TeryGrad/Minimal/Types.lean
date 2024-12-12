@@ -6,10 +6,12 @@ inductive NArray (α : Type u) : Nat → Type u where
 | cons₁ (a : α) (l : NArray α 1) : NArray α 1
 | cons₂ {n : Nat} (a : NArray α n) (l : NArray α (n+1)) : NArray α (n + 1)
 
-structure Path (shape : List Nat) :=
+structure Path (shape : List Nat) where
     path : List Nat
     lenLt : path.length < shape.length
     inBounds : ∀ i : Fin path.length, path.get i < shape.get ⟨i.val, Nat.lt_trans i.isLt lenLt⟩
+
+def NArray.depth {α : Type u} {n : Nat} (array : NArray α n) : Nat := n
 
 def NArray.length {α : Type u} {n : Nat} : (array : NArray α n) → Nat
 | nil n => 0
@@ -37,16 +39,138 @@ def NArray.at {α : Type u} {n : Nat} (array : NArray α n) : (path : List Nat) 
             exact (x.at l)
           }
           | none => none
+
+def NArray.lengthUniform {α : Type u} {n : Nat} : NArray α n → Prop
+| nil n => True
+| cons₁ _ _ => True
+| cons₂ a l => (∀ x y : Fin (cons₂ a l).length, ((cons₂ a l).get x).length = ((cons₂ a l).get y).length) ∧ (∀ x : Fin (cons₂ a l).length, ((cons₂ a l).get x).lengthUniform)
+
 /-
     NArray where at each depth the elements have the same length
     [[1, 2], [2, 3]] is a Tensor but [[1, 2], [3]] is not
     same np.ndarray
 -/
-structure Tensor (α : Type u) (n : Nat) (shape : List Nat) : Type u :=
-    (toNArray : NArray α n)
-    (elementsUniform :
-     ∀ path₁ path₂ : Path shape,
-      path₁.path.length = path₂.path.length →
-        (toNArray.at path₁.path) ≠ none ∧
-        (toNArray.at path₁.path).map NArray.length = (toNArray.at path₂.path).map NArray.length)
--- (kernel) invalid nested inductive datatype 'Array', nested inductive datatypes parameters cannot contain local variables.
+structure Tensor (α : Type u) (shape : List Nat) : Type u where
+    (toNArray : NArray α (if shape.isEmpty then 0 else shape.get! 0))
+    (matchShape : ∀ n : Fin shape.length,
+     ∀ path : Path shape,
+      path.path.length = n →
+        (toNArray.at path.path) ≠ none ∧
+        (toNArray.at path.path).map NArray.length = shape.get n)
+
+/-
+    an array of tensors where the ith tensor has shapes[i]
+    meant to provided type safety to the notion of tuple of tensors used for parents and save_tensors in tinygrad.
+    Note: we use List for the individual shapes since shapes aren't supposed to be mutable (like tuples in python).
+-/
+structure ShapedTensorVector (α : Type u) (shapes : Array (List Nat)) where
+    tensorVector : Vector (Sigma (fun shape : List Nat => Tensor α shape)) shapes.size
+    hasShape : ∀ i : Fin shapes.size, (tensorVector.get i).1 = shapes[i]
+
+def ShapedTensorVector.get {α : Type u} {shapes : Array (List Nat)} (x : ShapedTensorVector α shapes) (i : Fin shapes.size) :
+    Tensor α shapes[i] := by
+        rw [← x.hasShape i]
+        exact x.tensorVector[i].snd
+
+/-
+    Tensor but with additional autograd information.
+    The `E` stands for `ε` from the dual numbers.
+    Note that we support different types for the data and grad tensors
+    since there are some cases where grad needs for precision / structure than data.
+    For example α could be a Monoid while β could be a group.
+-/
+structure ETensor (α : Type u) (β : Type v) (shape : List Nat) where
+    data : Tensor α shape
+    grad : Option (Tensor β shape)
+
+structure DVector {n : Nat} (p : Fin n → Type u) where
+  val : (i : Fin n) → p i
+
+/-
+   Context for gradient information during autograd.
+   The data-carrying part of tinygrad's Function class.
+   As with ETensor
+   - α is the data type
+   - β is the grad type
+-/
+structure FunctionCtx (α : Type u) (β : Type v) :=
+    parents : List (Sigma (fun shape : List Nat => Tensor α shape))
+    saved_tensors : List (Sigma (fun shape : List Nat => Tensor β shape))
+
+/-
+   api carrying code for tinygrad's Function class
+   Note that we do not need to distinguish between __init__ and forward
+   since all init does is create a context containing the parents and an empty saved_tensors list
+   instead we will take the parents list as input in the forward pass.
+   Note about parent:
+    if you have Z = X * Y, then the function Z will have parents X and Y
+-/
+structure EFunction (α : Type u) (β : Type v) (shapes : Array (List Nat)) (outShape : List Nat) :=
+    -- take in a context and data tensors (α) to produce an output tensor and function context
+    forward : ShapedTensorVector α shapes → Tensor α outShape × FunctionCtx α β
+    -- computes the gradient based on the saved_tensors in the FunctionCtx
+    backward : FunctionCtx α β → Tensor β outShape → ShapedTensorVector β shapes
+    -- TODO :: add an additional condition that assures forward and backward compose properly
+
+variable {α : Type u} {β : Type v}
+
+/-!
+    Consider the following example:
+    ```python
+    class TinyBobNet:
+        def __init__(self):
+            self.l1 = Tensor(layer_init(784, 128))
+            self.l2 = Tensor(layer_init(128, 10))
+
+        def forward(self, x):
+            return x.dot(self.l1).relu().dot(self.l2).logsoftmax()
+    ```
+    In training, TinyBobNet.forward is called with a fresh tensor
+    ```python
+    samp = np.random.randint(0, X_train.shape[0], size=(BS))
+    x = Tensor(X_train[samp].reshape((-1, 28*28)))
+    ```
+    Additionally recall that apply looks like this
+    ```python
+    def apply(self, arg, *x):
+        ctx = arg(self, *x)
+        ret = Tensor(arg.forward(ctx, self.data, *[t.data for t in x]))
+        ret._ctx = ctx
+        return ret
+    ```
+    At each training step. Meaning that at each training step:
+    - x has a fresh context
+    - so when you run x.dot(self.l1), the corresponding call to apply a Tensor with a fresh context is returned.
+    And this proces just keeps going. Importantly, the weights layers l1, l2 don't carry any context information.
+    Meaning that each iterations context is compltely independent of the previous iteration's context.
+-/
+
+instance {α : Type u} [Inhabited α] : Inhabited ((shape : List Nat) × (Tensor α shape)) := sorry
+
+instance {α : Type u} {shape : List Nat} [Add α] : Add (Tensor α shape) := sorry
+def add (α : Type u) [Inhabited α] [Add α] (β : Type v) [Add β] (shape : List Nat): EFunction α β #[shape, shape] shape :=
+{
+    forward := fun x => Id.run do
+        -- TODO:: need nat based get for tensorVector
+        let x1 : Tensor α shape := x.get ⟨0, by simp⟩
+        let x2 : Tensor α shape := x.get ⟨1, by simp⟩
+        ⟨x1 + x2, ⟨#[], ⟨fun x => by {
+            have := x.isLt
+            simp at this
+        }⟩, #[], ⟨fun x => by {
+            have := x.isLt
+            simp at this
+        }⟩⟩⟩
+    backward := fun ⟨parents, saved_tensors⟩ grad_output => Id.run do
+        ⟨⟨#[⟨shape, grad_output⟩, ⟨shape, grad_output⟩], by simp⟩,
+            by {
+                intro i
+                match i with
+                | ⟨i, hi⟩ => {
+                    simp at hi
+                    match i with
+                    | 0 => rfl
+                    | 1 => rfl
+                }
+            }⟩
+}
