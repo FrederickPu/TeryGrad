@@ -58,38 +58,41 @@ structure Tensor (α : Type u) (shape : List Nat) : Type u where
         (toNArray.at path.path) ≠ none ∧
         (toNArray.at path.path).map NArray.length = shape.get n)
 
+
+structure ShapedVector (Shape : Type v) (ShapedType : Shape → Type u) (shapes : Array Shape) where
+    shapedVector : Vector (Sigma (fun shape : Shape => ShapedType shape)) shapes.size
+    -- we use this definition instead of the quantifier definition for the constructor so that shape matching can be provided using `rfl`
+    shapesMatch : (List.finRange shapes.size).map (fun i => (shapedVector.get i).1) = (List.finRange shapes.size).map (fun i => shapes[i])
+
 /-
     an array of tensors where the ith tensor has shapes[i]
     meant to provided type safety to the notion of tuple of tensors used for parents and save_tensors in tinygrad.
     Note: we use List for the individual shapes since shapes aren't supposed to be mutable (like tuples in python).
 -/
-structure ShapedTensorVector (α : Type u) (shapes : Array (List Nat)) where
-    tensorVector : Vector (Sigma (fun shape : List Nat => Tensor α shape)) shapes.size
-    -- we use this definition instead of the quantifier definition for the constructor so that shape matching can be provided using `rfl`
-    shapesMatch : (List.finRange shapes.size).map (fun i => (tensorVector.get i).1) = (List.finRange shapes.size).map (fun i => shapes[i])
+def ShapedTensorVector (α : Type u) := ShapedVector (List Nat) (Tensor α)
 
 def ShapedTensorVector.hasShape {α : Type u} {shapes : Array (List Nat)} (s : ShapedTensorVector α shapes) :
-    ∀ i : Fin (shapes.size), (s.tensorVector.get i).1 = shapes[i] := by
+    ∀ i : Fin (shapes.size), (s.shapedVector.get i).1 = shapes[i] := by
     intro i
-    have : ((List.finRange shapes.size).map (fun i => (s.tensorVector.get i).fst)).get ⟨i.val, by simp⟩ = ((List.finRange shapes.size).map (fun i => shapes[i])).get ⟨i.val, by simp⟩ := by
+    have : ((List.finRange shapes.size).map (fun i => (s.shapedVector.get i).fst)).get ⟨i.val, by simp⟩ = ((List.finRange shapes.size).map (fun i => shapes[i])).get ⟨i.val, by simp⟩ := by
         have := s.shapesMatch
         apply List.get_of_eq
         assumption
     simp at this
+    exact this
 
 def ShapedTensorVector.get {α : Type u} {shapes : Array (List Nat)} (x : ShapedTensorVector α shapes) (i : Fin shapes.size) :
     Tensor α shapes[i] := by
         rw [← x.hasShape i]
-        exact x.tensorVector[i].snd
+        exact x.shapedVector[i].snd
 
 /-
     Tensor but with additional autograd information.
-    The `E` stands for `ε` from the dual numbers.
     Note that we support different types for the data and grad tensors
     since there are some cases where grad needs for precision / structure than data.
     For example α could be a Monoid while β could be a group.
 -/
-structure ETensor (α : Type u) (β : Type v) (shape : List Nat) where
+structure DualTensor (α : Type u) (β : Type v) (shape : List Nat) where
     data : Tensor α shape
     grad : Option (Tensor β shape)
 
@@ -103,8 +106,8 @@ structure DVector {n : Nat} (p : Fin n → Type u) where
    - α is the data type
    - β is the grad type
 -/
-structure FunctionCtx (α : Type u) (β : Type v) (numParents : Nat) (saveShapes : Array (List Nat)) where
-    parents : Vector ((shape : List Nat) × (ETensor α β shape)) numParents
+structure EFunctionCtx (α : Type u) (β : Type v) (numParents : Nat) (saveShapes : Array (List Nat)) where
+    parents : Vector ((shape : List Nat) × (DualTensor α β shape)) numParents
     saved_tensors : ShapedTensorVector β saveShapes
 
 /-
@@ -120,11 +123,30 @@ structure FunctionCtx (α : Type u) (β : Type v) (numParents : Nat) (saveShapes
 structure EFunction (α : Type u) (β : Type v) (shapes : Array (List Nat)) (outShape : List Nat) where
     saveShapes : Array (List Nat)
     -- take in a context and data tensors (α) to produce an output tensor and function context
-    forward : (parents : Vector ((shape : List Nat) × (ETensor α β shape)) shapes.size) → ShapedTensorVector α shapes → Tensor α outShape × FunctionCtx α β shapes.size saveShapes
+    forward : (parents : Vector ((shape : List Nat) × (DualTensor α β shape)) shapes.size) → ShapedTensorVector α shapes → Tensor α outShape × EFunctionCtx α β shapes.size saveShapes
     -- computes the gradient based on the saved_tensors in the FunctionCtx
-    backward : FunctionCtx α β shapes.size saveShapes → Tensor β outShape → ShapedTensorVector β shapes
+    backward : EFunctionCtx α β shapes.size saveShapes → Tensor β outShape → ShapedTensorVector β shapes
     -- TODO :: add an additional condition that assures forward and backward compose properly
 
+/-
+    simplified version of computation graph (no weight sharing)
+    AutoDiffTree α β outShape
+-/
+inductive AutoDiffTree (α : Type u) (β : Type v) : List Nat → Type (max u v)
+| mk
+    {outShape : List Nat}
+    (parents : Σ shapes, ShapedVector (List Nat) (Tensor α) shapes)
+    (ctx : Σ shapes, EFunction α β shapes outShape)
+    (matchesShapes : parents.1 = ctx.1)
+    (tensor : DualTensor α β outShape)
+    : AutoDiffTree α β outShape
+
+namespace AutoDiffTree
+
+def forward : False := sorry
+def backward : False := sorry
+
+end AutoDiffTree
 variable {α : Type u} {β : Type v}
 
 /-!
@@ -161,7 +183,9 @@ variable {α : Type u} {β : Type v}
 instance {α : Type u} [Inhabited α] : Inhabited ((shape : List Nat) × (Tensor α shape)) := sorry
 
 instance {α : Type u} {shape : List Nat} [Add α] : Add (Tensor α shape) := sorry
-def add (α : Type u) [Inhabited α] [Add α] (β : Type v) [Add β] (shape : List Nat): EFunction α β #[shape, shape] shape :=
+instance {α : Type u} {shape : List Nat} [Mul α] : Mul (Tensor α shape) := sorry
+
+def add {α : Type u} [Inhabited α] [Add α] {β : Type v} (shape : List Nat): EFunction α β #[shape, shape] shape :=
 {
     saveShapes := #[]
     forward :=
@@ -171,6 +195,21 @@ def add (α : Type u) [Inhabited α] [Add α] (β : Type v) [Add β] (shape : Li
         ⟨x1 + x2, ⟨parents, ⟨#v[], rfl⟩⟩⟩
     backward := fun ⟨parents, saved_tensors⟩ grad_output => Id.run do
         ⟨⟨#[⟨shape, grad_output⟩, ⟨shape, grad_output⟩], by simp⟩,
+            rfl⟩
+}
+
+def mul (α : Type u) [Inhabited α] [Add α] [Mul α] (shape : List Nat): EFunction α α #[shape, shape] shape :=
+{
+    saveShapes := #[shape, shape]
+    forward :=
+     fun parents x =>
+        let x1 : Tensor α shape := x.get ⟨0, by simp⟩
+        let x2 : Tensor α shape := x.get ⟨1, by simp⟩
+        ⟨x1 * x2, ⟨parents, ⟨#v[⟨shape, x1⟩, ⟨shape, x2⟩], rfl⟩⟩⟩
+    backward := fun ⟨parents, saved_tensors⟩ grad_output => Id.run do
+        let x1 : Tensor α shape := saved_tensors.get ⟨0, by simp⟩
+        let x2 : Tensor α shape := saved_tensors.get ⟨1, by simp⟩
+        ⟨⟨#[⟨shape, grad_output * x1⟩, ⟨shape, grad_output * x2⟩], by simp⟩,
             rfl⟩
 }
 
