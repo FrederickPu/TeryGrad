@@ -1,4 +1,5 @@
 import TeryGrad.DType
+import TeryGrad.FromPython
 
 inductive Ops
   -- uops that aren't rendered
@@ -36,8 +37,6 @@ inductive Ops
   -- consts last!
   | VCONST | CONST
 
-namespace Ops
-
 -- Helper functiions for Ops
 
 def value (self : Ops) : Int := sorry
@@ -61,7 +60,7 @@ def value (self : Ops) : Int := sorry
 -- def _suop(lst, uop_fxn, python_fxn):
 --   uops, nums = partition(lst, lambda x: isinstance(x, UOp))
 --   return ssimplify(functools.reduce(uop_fxn, uops + ([python_fxn(nums)] if nums else [])))
--- def smax(*lst): return _suop(argfix(*lst), UOp.maximum, max)
+def smax (xs : List SInt) : SInt := sorry
 -- def smin(*lst): return _suop(argfix(*lst), UOp.minimum, min)
 
 -- def ssimplify(uop): return uop.ssimplify() if isinstance(uop, UOp) else uop
@@ -85,7 +84,29 @@ def value (self : Ops) : Int := sorry
 --     UOpMetaClass.ucache[key] = weakref.ref(created:=super().__call__(*key))
 --     return created
 
-end Ops
+namespace GroupOp
+
+instance : BEq Ops := sorry
+
+def Unary := [Ops.EXP2, Ops.LOG2, Ops.SIN, Ops.SQRT, Ops.RECIP, Ops.NEG]
+def Binary := [Ops.ADD, Ops.MUL, Ops.IDIV, Ops.MAX, Ops.MOD, Ops.CMPLT, Ops.CMPNE, Ops.XOR, Ops.SHL, Ops.SHR, Ops.OR, Ops.AND, Ops.THREEFRY, Ops.SUB, Ops.FDIV]
+def Ternary := [Ops.WHERE, Ops.MULACC]
+def ALU := Unary ∪ Binary ∪ Ternary
+
+def Irreducible := [Ops.CONST, Ops.DEFINE_VAR, Ops.SPECIAL, Ops.RANGE]
+
+-- # meta ops
+def Meta := [Ops.COPY, Ops.EMPTY, Ops.BUFFER_VIEW]
+def Buffer := [Ops.LOAD, Ops.PRELOAD, Ops.STORE, Ops.VALID]
+def Block := [Ops.BLOCK, Ops.BLOCKEND, Ops.BLOCKFORK, Ops.BLOCKSTART]
+
+-- # BinaryOps that can be flipped
+def Commutative := [Ops.ADD, Ops.MUL, Ops.MAX, Ops.CMPNE, Ops.XOR, Ops.AND, Ops.OR]
+
+-- # do not preserve f(0) = 0
+def UnsafePad := [Ops.RECIP, Ops.LOG2, Ops.EXP2, Ops.IDIV]
+
+end GroupOp
 
 inductive MultiLazyBuffer
 inductive Tensor
@@ -112,7 +133,6 @@ inductive UOp
 end
 
 namespace View
-variable (x : View)
 def shape : View → List (Int ⊕ UOp) :=
  fun ⟨a, b, c, d, e⟩ => a
 def strides : View → List (Int ⊕ UOp) :=
@@ -127,13 +147,13 @@ end View
 
 namespace UOp
 variable (x : UOp)
-def op :=
+def op : Ops :=
   match x with
   | mk op _ _ _ => op
 def dtype :=
   match x with
   | mk _ dtype _ _ => dtype
-def src :=
+def src : List UOp :=
   match x with
   | mk _ _ src _ => src
 def arg :=

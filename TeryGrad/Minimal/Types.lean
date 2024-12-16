@@ -60,9 +60,9 @@ structure Tensor (α : Type u) (shape : List Nat) : Type u where
 
 
 structure ShapedVector {Shape : Type v} (ShapedType : Shape → Type u) (shapes : Array Shape) where
-    shapedVector : Vector (Sigma (fun shape : Shape => ShapedType shape)) shapes.size
+    shapedArray : Array (Sigma (fun shape : Shape => ShapedType shape))
     -- we use this definition instead of the quantifier definition for the constructor so that shape matching can be provided using `rfl`
-    shapesMatch : (List.finRange shapes.size).map (fun i => (shapedVector.get i).1) = (List.finRange shapes.size).map (fun i => shapes[i])
+    shapesMatch : shapedArray.map (fun x => x.1) = shapes
 
 /-
     an array of tensors where the ith tensor has shapes[i]
@@ -72,19 +72,26 @@ structure ShapedVector {Shape : Type v} (ShapedType : Shape → Type u) (shapes 
 def ShapedTensorVector (α : Type u) := ShapedVector (Tensor α)
 
 def ShapedTensorVector.hasShape {α : Type u} {shapes : Array (List Nat)} (s : ShapedTensorVector α shapes) :
-    ∀ i : Fin (shapes.size), (s.shapedVector.get i).1 = shapes[i] := by
-    intro i
-    have : ((List.finRange shapes.size).map (fun i => (s.shapedVector.get i).fst)).get ⟨i.val, by simp⟩ = ((List.finRange shapes.size).map (fun i => shapes[i])).get ⟨i.val, by simp⟩ := by
-        have := s.shapesMatch
-        apply List.get_of_eq
-        assumption
-    simp at this
-    exact this
+    ∀ i : Fin (shapes.size), (s.shapedArray.get i.val sorry).1 = shapes[i] := by
+        have : shapes.size = s.shapedArray.size := by
+            have := s.shapesMatch
+            simp [← this]
+        sorry
+        -- intro i
+        -- have : ((List.finRange shapes.size).map (fun i => (s.shapedArray.get i.val sorry).fst)).get ⟨i.val, by simp⟩ = ((List.finRange shapes.size).map (fun i => shapes[i])).get ⟨i.val, by simp⟩ := by
+        --     have := s.shapesMatch
+        --     apply List.get_of_eq
+
+        -- simp at this
+    -- exact this
 
 def ShapedTensorVector.get {α : Type u} {shapes : Array (List Nat)} (x : ShapedTensorVector α shapes) (i : Fin shapes.size) :
     Tensor α shapes[i] := by
         rw [← x.hasShape i]
-        exact x.shapedVector[i].snd
+        have : shapes.size = x.shapedArray.size := by
+            have := x.shapesMatch
+            simp [← this]
+        exact x.shapedArray[i].snd
 
 /-
     Tensor but with additional autograd information.
@@ -99,18 +106,6 @@ structure DualTensor (α : Type u) (β : Type v) (shape : List Nat) where
 structure DVector {n : Nat} (p : Fin n → Type u) where
   val : (i : Fin n) → p i
 
-
-/-
-   Context for gradient information during autograd.
-   The data-carrying part of tinygrad's Function class.
-   As with ETensor
-   - α is the data type
-   - β is the grad type
--/
-protected structure EFunction.Ctx (α : Type u) (β : Type v) (shapes : Array (List Nat)) (saveShapes : Array (List Nat)) where
-    parents : ShapedVector (Tensor α) shapes
-    saved_tensors : ShapedTensorVector β saveShapes
-
 /-
    api carrying code for tinygrad's Function class
    if you have Z = X * Y, then the function Z will have parents X and Y
@@ -123,10 +118,11 @@ protected structure EFunction.Ctx (α : Type u) (β : Type v) (shapes : Array (L
 -/
 structure EFunction (α : Type u) (β : Type v) (shapes : Array (List Nat)) (outShape : List Nat) where
     saveShapes : Array (List Nat)
-    -- take in a context and data tensors (α) to produce an output tensor and function context
-    forward : (parents : ShapedVector (Tensor α) shapes) → ShapedTensorVector α shapes → Tensor α outShape × EFunction.Ctx α β shapes saveShapes
+    -- take in a context and data tensors (α) to produce an output tensor and array of saved_tensors
+    forward : (parents : ShapedVector (Tensor α) shapes) → Tensor α outShape × (ShapedTensorVector β saveShapes)
     -- computes the gradient based on the saved_tensors in the FunctionCtx
-    backward : EFunction.Ctx α β shapes saveShapes → Tensor β outShape → ShapedTensorVector β shapes
+    backward (parents : ShapedVector (Tensor α) shapes) (saved_tensors : ShapedTensorVector β saveShapes)
+        (grad_output : Tensor β outShape) : ShapedTensorVector β shapes
     -- TODO :: add an additional condition that assures forward and backward compose properly
 
 /- Data carrying part of ComputedAutoDiffTree
@@ -168,26 +164,13 @@ protected inductive AutoDiffTree.DiffTree (α : Type u) (β : Type v) : List Nat
     {outShape : List Nat}
     (parents : Array (Σ shape, AutoDiffTree.DiffTree α β shape))
     (ctx : Σ shapes, EFunction α β shapes outShape)
-    (tensor : Tensor α outShape)
     : AutoDiffTree.DiffTree α β outShape
 | ofComputed {shape : List Nat}: ComputedAutoDiffTree.DiffTree α β shape → AutoDiffTree.DiffTree α β shape
-
-def AutoDiffTree.DiffTree.tensor {α : Type u} {β : Type v} {outShape : List Nat} : AutoDiffTree.DiffTree α β outShape → Tensor α outShape
-| mk
-    (parents : Array (Σ shape, AutoDiffTree.DiffTree α β shape))
-    (ctx : Σ shapes, EFunction α β shapes outShape)
-    (tensor : Tensor α outShape) => tensor
-| ofComputed c => by
-    have : c.1 = outShape := by
-        cases c
-        simp
-    rw [← this]
-    exact c.5
 
 /- parents and ctx shapes match at all levels. all ComputedAutoDiffTree.DiffTree are also valid
 -/
 inductive AutoDiffTree.DiffTree.valid {α : Type u} {β : Type v} : ∀ {shape : List Nat}, AutoDiffTree.DiffTree α β shape → Prop
-| mk (parents : Array (Σ shape, AutoDiffTree.DiffTree α β shape)) (ctx : Σ shapes, EFunction α β shapes outShape) (tensor : DualTensor α β outShape) : (parents.map (fun x => x.1) = ctx.1) → (∀ x ∈ parents, x.2.valid) → (AutoDiffTree.DiffTree.mk parents ctx tensor).valid
+| mk (parents : Array (Σ shape, AutoDiffTree.DiffTree α β shape)) (ctx : Σ shapes, EFunction α β shapes outShape) : (parents.map (fun x => x.1) = ctx.1) → (∀ x ∈ parents, x.2.valid) → (AutoDiffTree.DiffTree.mk parents ctx).valid
 | ofComputed : computedTree.valid → (ofComputed computedTree).valid
 
 /-
@@ -207,19 +190,34 @@ def forward {α : Type u} {β : Type v} {shape : List Nat} : AutoDiffTree α β 
     cases h
     trivial
 }⟩
-| ⟨AutoDiffTree.DiffTree.mk (parents : Array (Σ shape, AutoDiffTree.DiffTree α β shape)) (ctx : Σ shapes, EFunction α β shapes shape) (tensor : Tensor α shape), h⟩ =>
-    let temp := ctx.2.forward (⟨⟨parents.map (fun ⟨shape, tree⟩ => ⟨shape, by {
-        have : (forward { diffTree := tree, isValid :=sorry }).diffTree.1 = shape := sorry
+| ⟨AutoDiffTree.DiffTree.mk (parents : Array (Σ shape, AutoDiffTree.DiffTree α β shape)) (ctx : Σ shapes, EFunction α β shapes shape), h⟩ => by
+    let womp : Array (Σ shape', ComputedAutoDiffTree α β shape') := parents.attach.map (fun ⟨⟨shape', tree⟩, h'⟩ => ⟨shape',
+        forward { diffTree := tree, isValid := by {
+            cases h
+            have wee : ∀ (x : (shape : List Nat) × AutoDiffTree.DiffTree α β shape), x ∈ parents → x.snd.valid := by trivial
+            exact wee ⟨shape', tree⟩ h'
+        }}⟩)
+    let parents' : Array (Σ shape, Tensor α shape) := parents.attach.map (fun ⟨⟨shape', tree⟩, h'⟩ => (⟨shape',
+        let fnCtx' := (forward { diffTree := tree, isValid := by {
+            cases h
+            have wee : ∀ (x : (shape : List Nat) × AutoDiffTree.DiffTree α β shape), x ∈ parents → x.snd.valid := by trivial
+            exact wee ⟨shape', tree⟩ h'
+        }})
+        let w : fnCtx'.diffTree.1 = shape' := by
+            cases fnCtx'.diffTree
+            simp
+        cast (by rw [w]) fnCtx'.diffTree.5
+    ⟩))
+    let parents' : ShapedTensorVector α ctx.1 := ⟨parents', by {
+        cases h
+        have :  Array.map (fun x => x.fst) parents = ctx.fst := sorry
         rw [← this]
-        exact (⟨tree, sorry⟩ :  AutoDiffTree α β shape).forward.diffTree.5
-    }⟩), sorry⟩, sorry⟩) (
-        ⟨⟨parents.map (fun ⟨shape, tree⟩ =>
-            ⟨shape, tree.tensor⟩
-        ), sorry⟩ , sorry⟩
-    )
-    let parents' := parents.map (fun ⟨shape, tree⟩ => ⟨shape, (⟨tree, sorry⟩ : AutoDiffTree α β shape).forward.1⟩)
-    let saved_tensors := ⟨ctx.snd.saveShapes, temp.2.2⟩
-    ⟨⟨parents', saved_tensors, ctx, tensor⟩, sorry⟩
+        ext i h1 h2 : 1
+        simp [parents']
+        simp [parents']
+    }⟩
+    let ⟨tensor, saved_tensors⟩ := ctx.2.forward parents'
+    exact ⟨⟨womp.map (fun x => ⟨x.1, x.2.1⟩), ⟨_, saved_tensors⟩, ctx, tensor⟩, sorry⟩
 termination_by
     t => sizeOf t
 decreasing_by

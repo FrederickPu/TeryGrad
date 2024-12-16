@@ -33,3 +33,8 @@ def fully_flatten : (x : NestedList T) → List T
 -- from_import
 -- strip_parens
 def ceil_div (a b : Float) := (a / b).ceil
+
+def unwrap {T : Type u} [Inhabited T] (x : Option T) : T :=
+  match x with
+  | some value => value
+  | none       => panic! "unwrap called on none"
