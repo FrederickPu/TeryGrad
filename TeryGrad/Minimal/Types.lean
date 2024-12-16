@@ -108,7 +108,7 @@ structure DVector {n : Nat} (p : Fin n → Type u) where
    - β is the grad type
 -/
 protected structure EFunction.Ctx (α : Type u) (β : Type v) (shapes : Array (List Nat)) (saveShapes : Array (List Nat)) where
-    parents : ShapedVector (DualTensor α β) shapes
+    parents : ShapedVector (Tensor α) shapes
     saved_tensors : ShapedTensorVector β saveShapes
 
 /-
@@ -124,7 +124,7 @@ protected structure EFunction.Ctx (α : Type u) (β : Type v) (shapes : Array (L
 structure EFunction (α : Type u) (β : Type v) (shapes : Array (List Nat)) (outShape : List Nat) where
     saveShapes : Array (List Nat)
     -- take in a context and data tensors (α) to produce an output tensor and function context
-    forward : (parents : ShapedVector (DualTensor α β) shapes) → ShapedTensorVector α shapes → Tensor α outShape × EFunction.Ctx α β shapes saveShapes
+    forward : (parents : ShapedVector (Tensor α) shapes) → ShapedTensorVector α shapes → Tensor α outShape × EFunction.Ctx α β shapes saveShapes
     -- computes the gradient based on the saved_tensors in the FunctionCtx
     backward : EFunction.Ctx α β shapes saveShapes → Tensor β outShape → ShapedTensorVector β shapes
     -- TODO :: add an additional condition that assures forward and backward compose properly
@@ -135,9 +135,9 @@ protected inductive ComputedAutoDiffTree.DiffTree (α : Type u) (β : Type v) : 
 | mk
     {outShape : List Nat}
     (parents : Array (Σ shape, ComputedAutoDiffTree.DiffTree α β shape))
-    (saved_tensors : Σ shapes, ShapedVector (DualTensor α β) shapes)
+    (saved_tensors : Σ shapes, ShapedVector (Tensor β) shapes)
     (ctx : Σ shapes, EFunction α β shapes outShape)
-    (tensor : DualTensor α β outShape)
+    (tensor : Tensor α outShape)
     : ComputedAutoDiffTree.DiffTree α β outShape
 
 /- parents, saved_tensors and ctx shapes match at all levels
@@ -168,23 +168,27 @@ protected inductive AutoDiffTree.DiffTree (α : Type u) (β : Type v) : List Nat
     {outShape : List Nat}
     (parents : Array (Σ shape, AutoDiffTree.DiffTree α β shape))
     (ctx : Σ shapes, EFunction α β shapes outShape)
-    (tensor : DualTensor α β outShape)
+    (tensor : Tensor α outShape)
     : AutoDiffTree.DiffTree α β outShape
 | ofComputed {shape : List Nat}: ComputedAutoDiffTree.DiffTree α β shape → AutoDiffTree.DiffTree α β shape
 
+def AutoDiffTree.DiffTree.tensor {α : Type u} {β : Type v} {outShape : List Nat} : AutoDiffTree.DiffTree α β outShape → Tensor α outShape
+| mk
+    (parents : Array (Σ shape, AutoDiffTree.DiffTree α β shape))
+    (ctx : Σ shapes, EFunction α β shapes outShape)
+    (tensor : Tensor α outShape) => tensor
+| ofComputed c => by
+    have : c.1 = outShape := by
+        cases c
+        simp
+    rw [← this]
+    exact c.5
+
 /- parents and ctx shapes match at all levels. all ComputedAutoDiffTree.DiffTree are also valid
 -/
-def AutoDiffTree.DiffTree.valid {α : Type u} {β : Type v} {shape : List Nat} : AutoDiffTree.DiffTree α β shape → Prop
-| mk parents ctx _ => parents.map (fun x => x.1) = ctx.1 ∧ ∀ x ∈ parents, x.2.valid
-| ofComputed computedTree => computedTree.valid
-termination_by
-    t => sizeOf t
-decreasing_by
-    have : sizeOf x < sizeOf parents := Array.sizeOf_lt_of_mem (by assumption)
-    cases x
-    simp
-    simp at this
-    omega
+inductive AutoDiffTree.DiffTree.valid {α : Type u} {β : Type v} : ∀ {shape : List Nat}, AutoDiffTree.DiffTree α β shape → Prop
+| mk (parents : Array (Σ shape, AutoDiffTree.DiffTree α β shape)) (ctx : Σ shapes, EFunction α β shapes outShape) (tensor : DualTensor α β outShape) : (parents.map (fun x => x.1) = ctx.1) → (∀ x ∈ parents, x.2.valid) → (AutoDiffTree.DiffTree.mk parents ctx tensor).valid
+| ofComputed : computedTree.valid → (ofComputed computedTree).valid
 
 /-
     simplified version of computation graph (no weight sharing)
@@ -197,9 +201,41 @@ structure AutoDiffTree (α : Type u) (β : Type v) (shape : List Nat) where
 namespace AutoDiffTree
 
 def init : False := sorry
-def forward {α : Type u} {β : Type v} (shape : List Nat) : AutoDiffTree α β shape → ComputedAutoDiffTree α β shape
-| ⟨AutoDiffTree.DiffTree.ofComputed c, h⟩ => ⟨c, h⟩
-| ⟨AutoDiffTree.DiffTree.mk parents ctx tensor, h⟩ => sorry
+
+def forward {α : Type u} {β : Type v} {shape : List Nat} : AutoDiffTree α β shape → ComputedAutoDiffTree α β shape
+| ⟨AutoDiffTree.DiffTree.ofComputed c, h⟩ => ⟨c, by {
+    cases h
+    trivial
+}⟩
+| ⟨AutoDiffTree.DiffTree.mk (parents : Array (Σ shape, AutoDiffTree.DiffTree α β shape)) (ctx : Σ shapes, EFunction α β shapes shape) (tensor : Tensor α shape), h⟩ =>
+    let temp := ctx.2.forward (⟨⟨parents.map (fun ⟨shape, tree⟩ => ⟨shape, by {
+        have : (forward { diffTree := tree, isValid :=sorry }).diffTree.1 = shape := sorry
+        rw [← this]
+        exact (⟨tree, sorry⟩ :  AutoDiffTree α β shape).forward.diffTree.5
+    }⟩), sorry⟩, sorry⟩) (
+        ⟨⟨parents.map (fun ⟨shape, tree⟩ =>
+            ⟨shape, tree.tensor⟩
+        ), sorry⟩ , sorry⟩
+    )
+    let parents' := parents.map (fun ⟨shape, tree⟩ => ⟨shape, (⟨tree, sorry⟩ : AutoDiffTree α β shape).forward.1⟩)
+    let saved_tensors := ⟨ctx.snd.saveShapes, temp.2.2⟩
+    ⟨⟨parents', saved_tensors, ctx, tensor⟩, sorry⟩
+termination_by
+    t => sizeOf t
+decreasing_by
+    simp_wf
+/-
+α : Type u
+β : Type v
+shape✝ : List Nat
+parents : Array ((shape : List Nat) × AutoDiffTree.DiffTree α β shape)
+ctx : (shapes : Array (List Nat)) × EFunction α β shapes shape✝
+tensor : DualTensor α β shape✝
+h : (DiffTree.mk parents ctx tensor).valid
+shape : List Nat
+tree : AutoDiffTree.DiffTree α β shape
+⊢ sizeOf tree < 1 + sizeOf shape✝ + sizeOf parents + sizeOf ctx + sizeOf tensor
+-/
 
 end AutoDiffTree
 
