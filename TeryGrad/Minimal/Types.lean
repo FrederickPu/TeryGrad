@@ -64,6 +64,8 @@ structure ShapedVector {Shape : Type v} (ShapedType : Shape → Type u) (shapes 
     -- we use this definition instead of the quantifier definition for the constructor so that shape matching can be provided using `rfl`
     shapesMatch : shapedArray.map (fun x => x.1) = shapes
 
+def ShapedVector.shapedVector {Shape : Type v} {ShapedType : Shape → Type u} {shapes : Array Shape} : ShapedVector ShapedType shapes → Vector (Sigma (fun shape : Shape => ShapedType shape)) shapes.size
+| ⟨shapedArray, shapesMatch⟩ => ⟨shapedArray, by simp [← shapesMatch]⟩
 /-
     an array of tensors where the ith tensor has shapes[i]
     meant to provided type safety to the notion of tuple of tensors used for parents and save_tensors in tinygrad.
@@ -72,18 +74,10 @@ structure ShapedVector {Shape : Type v} (ShapedType : Shape → Type u) (shapes 
 def ShapedTensorVector (α : Type u) := ShapedVector (Tensor α)
 
 def ShapedTensorVector.hasShape {α : Type u} {shapes : Array (List Nat)} (s : ShapedTensorVector α shapes) :
-    ∀ i : Fin (shapes.size), (s.shapedArray.get i.val sorry).1 = shapes[i] := by
-        have : shapes.size = s.shapedArray.size := by
-            have := s.shapesMatch
-            simp [← this]
-        sorry
-        -- intro i
-        -- have : ((List.finRange shapes.size).map (fun i => (s.shapedArray.get i.val sorry).fst)).get ⟨i.val, by simp⟩ = ((List.finRange shapes.size).map (fun i => shapes[i])).get ⟨i.val, by simp⟩ := by
-        --     have := s.shapesMatch
-        --     apply List.get_of_eq
-
-        -- simp at this
-    -- exact this
+    ∀ i : Fin (shapes.size), (s.shapedVector.get i).1 = shapes[i] := by
+        intro i
+        simp [ShapedVector.shapedVector, ← s.shapesMatch]
+        rfl
 
 def ShapedTensorVector.get {α : Type u} {shapes : Array (List Nat)} (x : ShapedTensorVector α shapes) (i : Fin shapes.size) :
     Tensor α shapes[i] := by
@@ -109,9 +103,9 @@ structure DVector {n : Nat} (p : Fin n → Type u) where
 structure EFunction (α : Type u) (β : Type v) (shapes : Array (List Nat)) (outShape : List Nat) where
     saveShapes : Array (List Nat)
     -- take in a context and data tensors (α) to produce an output tensor and array of saved_tensors
-    forward : (parents : ShapedVector (Tensor α) shapes) → Tensor α outShape × (ShapedTensorVector β saveShapes)
+    forward : (parents : ShapedTensorVector α shapes) → Tensor α outShape × (ShapedTensorVector β saveShapes)
     -- computes the gradient based on the saved_tensors in the FunctionCtx
-    backward (parents : ShapedVector (Tensor α) shapes) (saved_tensors : ShapedTensorVector β saveShapes)
+    backward (parents : ShapedTensorVector α shapes) (saved_tensors : ShapedTensorVector β saveShapes)
         (grad_output : Tensor β outShape) : ShapedTensorVector β shapes
     -- TODO :: add an additional condition that assures forward and backward compose properly
 
@@ -282,29 +276,26 @@ def add {α : Type u} [Inhabited α] [Add α] {β : Type v} (shape : List Nat): 
     saveShapes := #[]
     forward :=
      fun parents =>
-        -- todo create external facing api that allows you to treat parents a Vector (Σ Tensor) shapes.size
-        -- this will allow simp and rfl to be used when accessing tensor at indices and proving shape matching
-        let x1 : Tensor α shape := parents.1.get 0 (by simp)
-        let x2 : Tensor α shape := parents.1.get ⟨1, by simp⟩
-        ⟨x1 + x2, ⟨#v[], rfl⟩⟩
-    backward := fun ⟨parents, saved_tensors⟩ grad_output => Id.run do
-        ⟨⟨#[⟨shape, grad_output⟩, ⟨shape, grad_output⟩], by simp⟩,
-            rfl⟩
+        let x1 : Tensor α shape := cast (by simp [parents.hasShape]; rfl) (parents.shapedVector.get ⟨0, by simp⟩).2
+        let x2 : Tensor α shape := cast (by simp [parents.hasShape]; rfl) (parents.shapedVector.get ⟨1, by simp⟩).2
+        ⟨x1 + x2, ⟨#[], rfl⟩⟩
+    backward := fun parents saved_tensors grad_output =>
+        ⟨#[⟨shape, grad_output⟩, ⟨shape, grad_output⟩], rfl⟩
 }
 
 def mul (α : Type u) [Inhabited α] [Add α] [Mul α] (shape : List Nat): EFunction α α #[shape, shape] shape :=
 {
     saveShapes := #[shape, shape]
     forward :=
-     fun parents x =>
-        let x1 : Tensor α shape := x.get ⟨0, by simp⟩
-        let x2 : Tensor α shape := x.get ⟨1, by simp⟩
-        ⟨x1 * x2, ⟨parents, ⟨#v[⟨shape, x1⟩, ⟨shape, x2⟩], rfl⟩⟩⟩
-    backward := fun ⟨parents, saved_tensors⟩ grad_output => Id.run do
-        let x1 : Tensor α shape := saved_tensors.get ⟨0, by simp⟩
-        let x2 : Tensor α shape := saved_tensors.get ⟨1, by simp⟩
-        ⟨⟨#[⟨shape, grad_output * x1⟩, ⟨shape, grad_output * x2⟩], by simp⟩,
-            rfl⟩
+     fun parents =>
+        let x1 : Tensor α shape := cast (by simp [parents.hasShape]; rfl) (parents.shapedVector.get ⟨0, by simp⟩).2
+        let x2 : Tensor α shape := cast (by simp [parents.hasShape]; rfl) (parents.shapedVector.get ⟨1, by simp⟩).2
+        ⟨x1 * x2, ⟨#[⟨shape, x1⟩, ⟨shape, x2⟩], rfl⟩⟩
+    backward := fun parents saved_tensors grad_output =>
+        let x1 : Tensor α shape := cast (by simp [saved_tensors.hasShape]; rfl) (saved_tensors.shapedVector.get ⟨0, by simp⟩).2
+        let x2 : Tensor α shape := cast (by simp [saved_tensors.hasShape]; rfl) (saved_tensors.shapedVector.get ⟨1, by simp⟩).2
+
+        ⟨#[⟨shape, grad_output * x1⟩, ⟨shape, grad_output * x2⟩], rfl⟩
 }
 
 #check Vector
