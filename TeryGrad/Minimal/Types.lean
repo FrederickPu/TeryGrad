@@ -93,16 +93,6 @@ def ShapedTensorVector.get {α : Type u} {shapes : Array (List Nat)} (x : Shaped
             simp [← this]
         exact x.shapedArray[i].snd
 
-/-
-    Tensor but with additional autograd information.
-    Note that we support different types for the data and grad tensors
-    since there are some cases where grad needs for precision / structure than data.
-    For example α could be a Monoid while β could be a group.
--/
-structure DualTensor (α : Type u) (β : Type v) (shape : List Nat) where
-    data : Tensor α shape
-    grad : Option (Tensor β shape)
-
 structure DVector {n : Nat} (p : Fin n → Type u) where
   val : (i : Fin n) → p i
 
@@ -138,17 +128,9 @@ protected inductive ComputedAutoDiffTree.DiffTree (α : Type u) (β : Type v) : 
 
 /- parents, saved_tensors and ctx shapes match at all levels
 -/
-protected def ComputedAutoDiffTree.DiffTree.valid {α : Type u} {β : Type v} {shape : List Nat} : ComputedAutoDiffTree.DiffTree α β shape → Prop
-| mk parents saved_tensors ctx _ =>
-    parents.map (fun x => x.1) = saved_tensors.1 ∧ saved_tensors.1 = ctx.1 ∧ ∀ x ∈ parents, x.2.valid
-termination_by
-    t => sizeOf t
-decreasing_by
-    have : sizeOf x < sizeOf parents := Array.sizeOf_lt_of_mem (by assumption)
-    cases x
-    simp
-    simp at this
-    omega
+protected inductive ComputedAutoDiffTree.DiffTree.valid {α : Type u} {β : Type v} : ∀ {shape : List Nat}, ComputedAutoDiffTree.DiffTree α β shape → Prop
+| mk {outShape : List Nat} {parents : Array (Σ shape, ComputedAutoDiffTree.DiffTree α β shape)} {saved_tensors : Σ shapes, ShapedVector (Tensor β) shapes} {ctx : Σ shapes, EFunction α β shapes outShape} {tensor : Tensor α outShape} :
+    (parents.map (fun x => x.1) = ctx.1) → (saved_tensors.1 = ctx.2.saveShapes) → (∀ x ∈ parents, x.2.valid) → (ComputedAutoDiffTree.DiffTree.mk parents saved_tensors ctx tensor).valid
 
 /-
     AutoDiffTree where the saved_tensors are computed
@@ -185,43 +167,59 @@ namespace AutoDiffTree
 
 def init : False := sorry
 
+variable {α α₁ α₂ : Type u₁} {β : α → Type u₂} {β₁ : α₁ → Type u₃} {β₂ : α₂ → Type u₄}
+@[simp] -- @[nolint simpNF]
+theorem Sigma.mk.inj_iff {a₁ a₂ : α} {b₁ : β a₁} {b₂ : β a₂} :
+    Sigma.mk a₁ b₁ = ⟨a₂, b₂⟩ ↔ a₁ = a₂ ∧ HEq b₁ b₂ :=
+  ⟨fun h ↦ by cases h; simp,
+   fun ⟨h₁, h₂⟩ ↦ by subst h₁; rw [eq_of_heq h₂]⟩
+
+
 def forward {α : Type u} {β : Type v} {shape : List Nat} : AutoDiffTree α β shape → ComputedAutoDiffTree α β shape
 | ⟨AutoDiffTree.DiffTree.ofComputed c, h⟩ => ⟨c, by {
     cases h
     trivial
 }⟩
 | ⟨AutoDiffTree.DiffTree.mk (parents : Array (Σ shape, AutoDiffTree.DiffTree α β shape)) (ctx : Σ shapes, EFunction α β shapes shape), h⟩ => by
-    let womp : Array (Σ shape', ComputedAutoDiffTree α β shape') := parents.attach.map (fun ⟨⟨shape', tree⟩, h'⟩ => ⟨shape',
+    let parents' : Array (Σ shape', ComputedAutoDiffTree α β shape') := parents.attach.map (fun ⟨⟨shape', tree⟩, h'⟩ => ⟨shape',
         forward { diffTree := tree, isValid := by {
             cases h
             have wee : ∀ (x : (shape : List Nat) × AutoDiffTree.DiffTree α β shape), x ∈ parents → x.snd.valid := by trivial
             exact wee ⟨shape', tree⟩ h'
         }}⟩)
-    let parents' : Array (Σ shape, Tensor α shape) := parents.attach.map (fun ⟨⟨shape', tree⟩, h'⟩ => (⟨shape',
-        let fnCtx' := (forward { diffTree := tree, isValid := by {
-            cases h
-            have wee : ∀ (x : (shape : List Nat) × AutoDiffTree.DiffTree α β shape), x ∈ parents → x.snd.valid := by trivial
-            exact wee ⟨shape', tree⟩ h'
-        }})
+    let parentsTensors : Array (Σ shape, Tensor α shape) := parents'.map (fun ⟨shape', fnCtx'⟩ => (⟨shape',
         let w : fnCtx'.diffTree.1 = shape' := by
             cases fnCtx'.diffTree
             simp
         cast (by rw [w]) fnCtx'.diffTree.5
     ⟩))
-    let parents' : ShapedTensorVector α ctx.1 := ⟨parents', by {
+    have :  Array.map (fun x => x.fst) parents = ctx.fst := by
         cases h
-        have :  Array.map (fun x => x.fst) parents = ctx.fst := sorry
+        trivial
+    let parentsTensors : ShapedTensorVector α ctx.1 := ⟨parentsTensors, by {
+        cases h
         rw [← this]
         ext i h1 h2 : 1
-        simp [parents']
-        simp [parents']
+        simp [parentsTensors, parents']
+        simp [parentsTensors, parents']
     }⟩
-    let ⟨tensor, saved_tensors⟩ := ctx.2.forward parents'
-    exact ⟨⟨womp.map (fun x => ⟨x.1, x.2.1⟩), ⟨_, saved_tensors⟩, ctx, tensor⟩, sorry⟩
-termination_by
-    t => sizeOf t
-decreasing_by
-    simp_wf
+    let ⟨tensor, saved_tensors⟩ := ctx.2.forward parentsTensors
+    exact ⟨⟨parents'.map (fun x => ⟨x.1, x.2.1⟩), ⟨_, saved_tensors⟩, ctx, tensor⟩, by {
+        apply ComputedAutoDiffTree.DiffTree.valid.mk
+        simp [parents', this]
+        simp
+        intro ⟨shapeX, X⟩ hX
+        simp
+        simp at hX
+        match hX with
+        | ⟨⟨shapeP, P⟩, hp, H⟩ => {
+            simp at H
+            have := H.1
+            have := H.2
+            have := H.2.symm
+            sorry
+        }
+    }⟩
 /-
 α : Type u
 β : Type v
@@ -283,10 +281,12 @@ def add {α : Type u} [Inhabited α] [Add α] {β : Type v} (shape : List Nat): 
 {
     saveShapes := #[]
     forward :=
-     fun parents x =>
-        let x1 : Tensor α shape := x.get ⟨0, by simp⟩
-        let x2 : Tensor α shape := x.get ⟨1, by simp⟩
-        ⟨x1 + x2, ⟨parents, ⟨#v[], rfl⟩⟩⟩
+     fun parents =>
+        -- todo create external facing api that allows you to treat parents a Vector (Σ Tensor) shapes.size
+        -- this will allow simp and rfl to be used when accessing tensor at indices and proving shape matching
+        let x1 : Tensor α shape := parents.1.get 0 (by simp)
+        let x2 : Tensor α shape := parents.1.get ⟨1, by simp⟩
+        ⟨x1 + x2, ⟨#v[], rfl⟩⟩
     backward := fun ⟨parents, saved_tensors⟩ grad_output => Id.run do
         ⟨⟨#[⟨shape, grad_output⟩, ⟨shape, grad_output⟩], by simp⟩,
             rfl⟩
