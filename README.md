@@ -12,6 +12,8 @@ potential for formally verified correctness.
 
 Just as how TinyGrad's size allows it to implement accelerators quickly, TeryGrad's verification abilities allow new models to implmeented quickly with guaranteed convergence properties
 
+# applications for Categorial ML
+Lean's flexible type system allows us to define a more general gradient based training algorithms where a model $M_{\theta}$ is parametrized by $\theta \in T$ where $T$ is a additive monoid and has gradient $T'$ where $T'$ is an additive group. Just as a tinygrad can write custom backends for different hardware targets, TeryGGrad will be able to write custom training algorithms for different scalars ($T$) and gradients ($T'$).
 
 # resources
 
