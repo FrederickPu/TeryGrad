@@ -8,3 +8,8 @@ name = "TeryGrad"
 [[lean_exe]]
 name = "terygrad"
 root = "Main"
+
+[[require]]
+name = "batteries"
+scope = "leanprover-community"
+rev = "main"

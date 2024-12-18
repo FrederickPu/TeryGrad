@@ -1,3 +1,4 @@
+import Batteries.Logic
 #check Array
 
 -- n nested homogenous Array
@@ -58,6 +59,10 @@ structure Tensor (α : Type u) (shape : List Nat) : Type u where
         (toNArray.at path.path) ≠ none ∧
         (toNArray.at path.path).map NArray.length = shape.get n)
 
+/- like List.map -/
+def Tensor.map {α : Type u} {β : Type v} (shape : List Nat) (f : α → β): Tensor α shape → Tensor β shape := sorry
+/- like List.enum -/
+def Tensor.enum {α : Type u} {β : Type v} (shape : List Nat) : Tensor α shape → Tensor (α × Path shape) shape := sorry
 
 structure ShapedVector {Shape : Type v} (ShapedType : Shape → Type u) (shapes : Array Shape) where
     shapedArray : Array (Sigma (fun shape : Shape => ShapedType shape))
@@ -98,7 +103,7 @@ structure DVector {n : Nat} (p : Fin n → Type u) where
    However, spliting up into multiple stages allows us to more closely follow the tinygrad codebase.
    Additionally, it might allow us to take advantage of certain caching properties of the lean compiler and ir optimizer.
 
-   We omit the finite function since it only initializes the parents. We instead pass parents into the forward pass to have a better type signature for FunctionCtx.
+   We omit the init function since it only initializes the parents. We instead pass parents into the forward pass to have a better type signature for FunctionCtx.
 -/
 structure EFunction (α : Type u) (β : Type v) (shapes : Array (List Nat)) (outShape : List Nat) where
     saveShapes : Array (List Nat)
@@ -159,7 +164,7 @@ structure AutoDiffTree (α : Type u) (β : Type v) (shape : List Nat) where
 
 namespace AutoDiffTree
 
-def init : False := sorry
+def init {shapes : Array (List Nat)} {outShape : List Nat} (parents : ShapedVector (AutoDiffTree α β) shapes) (ctx : EFunction α β shapes outShape) : AutoDiffTree α β outShape := sorry
 
 variable {α α₁ α₂ : Type u₁} {β : α → Type u₂} {β₁ : α₁ → Type u₃} {β₂ : α₂ → Type u₄}
 @[simp] -- @[nolint simpNF]
@@ -194,38 +199,20 @@ def forward {α : Type u} {β : Type v} {shape : List Nat} : AutoDiffTree α β 
         cases h
         rw [← this]
         ext i h1 h2 : 1
-        simp [parentsTensors, parents']
-        simp [parentsTensors, parents']
+        all_goals simp [parentsTensors, parents']
     }⟩
     let ⟨tensor, saved_tensors⟩ := ctx.2.forward parentsTensors
     exact ⟨⟨parents'.map (fun x => ⟨x.1, x.2.1⟩), ⟨_, saved_tensors⟩, ctx, tensor⟩, by {
         apply ComputedAutoDiffTree.DiffTree.valid.mk
         simp [parents', this]
-        simp
-        intro ⟨shapeX, X⟩ hX
-        simp
-        simp at hX
+        simp; intro ⟨shapeX, X⟩ hX
+        simp; simp at hX
         match hX with
-        | ⟨⟨shapeP, P⟩, hp, H⟩ => {
-            simp at H
-            have := H.1
-            have := H.2
-            have := H.2.symm
-            sorry
-        }
+        | ⟨⟨shapeP, P⟩, hp, H⟩ =>
+            cases H.1
+            cases H.2
+            exact P.isValid
     }⟩
-/-
-α : Type u
-β : Type v
-shape✝ : List Nat
-parents : Array ((shape : List Nat) × AutoDiffTree.DiffTree α β shape)
-ctx : (shapes : Array (List Nat)) × EFunction α β shapes shape✝
-tensor : DualTensor α β shape✝
-h : (DiffTree.mk parents ctx tensor).valid
-shape : List Nat
-tree : AutoDiffTree.DiffTree α β shape
-⊢ sizeOf tree < 1 + sizeOf shape✝ + sizeOf parents + sizeOf ctx + sizeOf tensor
--/
 
 end AutoDiffTree
 
@@ -294,7 +281,6 @@ def mul (α : Type u) [Inhabited α] [Add α] [Mul α] (shape : List Nat): EFunc
     backward := fun parents saved_tensors grad_output =>
         let x1 : Tensor α shape := cast (by simp [saved_tensors.hasShape]; rfl) (saved_tensors.shapedVector.get ⟨0, by simp⟩).2
         let x2 : Tensor α shape := cast (by simp [saved_tensors.hasShape]; rfl) (saved_tensors.shapedVector.get ⟨1, by simp⟩).2
-
         ⟨#[⟨shape, grad_output * x1⟩, ⟨shape, grad_output * x2⟩], rfl⟩
 }
 
