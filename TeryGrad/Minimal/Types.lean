@@ -54,6 +54,11 @@ macro_rules
   | `(N[$x]) => `(NArray.cons₁ $x (NArray.nil _))
   | `(N[$x, $xs,*]) => `(NArray.cons₁ $x N[$xs,*])
 
+instance {α : Type u} {shape : List Nat} [Add α] : Add (NArray α shape) :=
+    ⟨fun x y => NArray.zipWith (· + ·) x y⟩
+instance {α : Type u} {shape : List Nat} [Mul α] : Mul (NArray α shape) :=
+    ⟨fun x y => NArray.zipWith (· * ·) x y⟩
+
 end NArray
 
 /-
@@ -103,6 +108,12 @@ structure EFunction (α : Type u) (β : Type v) (shapes : Array (List Nat)) (out
     backward (parents : ShapedNArrayVector α shapes) (saved_tensors : ShapedNArrayVector β saveShapes)
         (grad_output : NArray β outShape) : ShapedNArrayVector β shapes
     -- TODO :: add an additional condition that assures forward and backward compose properly
+
+/-
+    function ctx that does nothing. Used for base level tensors (which are treated as constants)
+-/
+def EFunction.const (α : Type u) (β : Type v) (shape : List Nat) (val : NArray α shape) : EFunction α β #[] shape :=
+    ⟨#[], fun _ => ⟨val, ⟨#[], rfl⟩⟩, fun _ _ _ => ⟨#[], rfl⟩⟩
 
 /- Data carrying part of ComputedAutoDiffTree
 -/
@@ -162,11 +173,13 @@ protected inductive AutoDiffTree.DiffTree (α : Type u) (β : Type v) : List Nat
     (parents : Array (Σ shape, AutoDiffTree.DiffTree α β shape))
     (ctx : Σ shapes, EFunction α β shapes outShape)
     : AutoDiffTree.DiffTree α β outShape
+| base {outShape : List Nat} (data : NArray α outShape) : AutoDiffTree.DiffTree α β outShape
 
 /- parents and ctx shapes match at all levels. all ComputedAutoDiffTree.DiffTree are also valid
 -/
 inductive AutoDiffTree.DiffTree.valid {α : Type u} {β : Type v} : ∀ {shape : List Nat}, AutoDiffTree.DiffTree α β shape → Prop
 | mk (parents : Array (Σ shape, AutoDiffTree.DiffTree α β shape)) (ctx : Σ shapes, EFunction α β shapes outShape) : (parents.map (fun x => x.1) = ctx.1) → (∀ x ∈ parents, x.2.valid) → (AutoDiffTree.DiffTree.mk parents ctx).valid
+| base {outShape : List Nat} (data : NArray α outShape) : valid (base data)
 
 /-
     simplified version of computation graph (no weight sharing)
@@ -179,13 +192,6 @@ structure AutoDiffTree (α : Type u) (β : Type v) (shape : List Nat) where
 namespace AutoDiffTree
 
 def init {shapes : Array (List Nat)} {outShape : List Nat} (parents : ShapedVector (AutoDiffTree α β) shapes) (ctx : EFunction α β shapes outShape) : AutoDiffTree α β outShape := sorry
-
-variable {α α₁ α₂ : Type u₁} {β : α → Type u₂} {β₁ : α₁ → Type u₃} {β₂ : α₂ → Type u₄}
-@[simp] -- @[nolint simpNF]
-theorem Sigma.mk.inj_iff {a₁ a₂ : α} {b₁ : β a₁} {b₂ : β a₂} :
-    Sigma.mk a₁ b₁ = ⟨a₂, b₂⟩ ↔ a₁ = a₂ ∧ HEq b₁ b₂ :=
-  ⟨fun h ↦ by cases h; simp,
-   fun ⟨h₁, h₂⟩ ↦ by subst h₁; rw [eq_of_heq h₂]⟩
 
 instance {α : Type u} {β : Type v} {shape : List Nat}  : Inhabited (ForwardedAutoDiffTree α β shape) := sorry
 
@@ -220,10 +226,11 @@ partial def forward {α : Type u} {β : Type v} {shape : List Nat} : AutoDiffTre
         simp; simp at hX
         match hX with
         | ⟨⟨shapeP, P⟩, hp, H⟩ =>
-            cases H.1
-            cases H.2
+            cases H
             exact P.isValid
     }⟩
+| ⟨AutoDiffTree.DiffTree.base data, _⟩ =>
+    ⟨⟨#[], ⟨#[], ⟨#[], rfl⟩⟩, ⟨#[], EFunction.const α β shape data⟩, data⟩, sorry⟩
 -- termination_by
 --     t => sizeOf t
 -- decreasing_by
@@ -250,8 +257,7 @@ partial def backward {α : Type u} {β : Type v} {shape : List Nat} : ForwardedA
 }
 end ForwardedAutoDiffTree
 
-variable {α : Type u} {β : Type v}
-
+namespace EFunction
 /-!
     Consider the following example:
     ```python
@@ -286,12 +292,7 @@ variable {α : Type u} {β : Type v}
 instance {α : Type u} [Inhabited α] : Inhabited ((shape : List Nat) × (NArray α shape)) :=
     ⟨[0], NArray.nil []⟩
 
-instance {α : Type u} {shape : List Nat} [Add α] : Add (NArray α shape) :=
-    ⟨fun x y => NArray.zipWith (· + ·) x y⟩
-instance {α : Type u} {shape : List Nat} [Mul α] : Mul (NArray α shape) :=
-    ⟨fun x y => NArray.zipWith (· * ·) x y⟩
-
-def add {α : Type u} [Inhabited α] [Add α] {β : Type v} (shape : List Nat): EFunction α β #[shape, shape] shape :=
+def add (α : Type u) [Inhabited α] [Add α] {β : Type v} (shape : List Nat): EFunction α β #[shape, shape] shape :=
 {
     saveShapes := #[]
     forward :=
@@ -303,7 +304,7 @@ def add {α : Type u} [Inhabited α] [Add α] {β : Type v} (shape : List Nat): 
         ⟨#[⟨shape, grad_output⟩, ⟨shape, grad_output⟩], rfl⟩
 }
 
-def mul (α : Type u) [Inhabited α] [Add α] [Mul α] (shape : List Nat): EFunction α α #[shape, shape] shape :=
+def mul (α : Type u) [Inhabited α] [Mul α] (shape : List Nat): EFunction α α #[shape, shape] shape :=
 {
     saveShapes := #[shape, shape]
     forward :=
@@ -317,4 +318,13 @@ def mul (α : Type u) [Inhabited α] [Add α] [Mul α] (shape : List Nat): EFunc
         ⟨#[⟨shape, grad_output * x1⟩, ⟨shape, grad_output * x2⟩], rfl⟩
 }
 
-#check Vector
+end EFunction
+
+namespace AutoDiffTree
+#check AutoDiffTree.DiffTree.mk
+def add {α : Type u} [Inhabited α] [Add α] (shape : List Nat) (x y : AutoDiffTree α α shape): AutoDiffTree α α shape :=
+    ⟨AutoDiffTree.DiffTree.mk #[⟨shape, x.1⟩, ⟨shape, y.1⟩] ⟨#[shape, shape], EFunction.add α shape⟩, sorry⟩
+def mul {α : Type u} [Inhabited α] [Mul α] (shape : List Nat) (x y : AutoDiffTree α α shape): AutoDiffTree α α shape :=
+    ⟨AutoDiffTree.DiffTree.mk #[⟨shape, x.1⟩, ⟨shape, y.1⟩] ⟨#[shape, shape], EFunction.mul α shape⟩, sorry⟩
+
+end AutoDiffTree
