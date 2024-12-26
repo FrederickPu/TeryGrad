@@ -322,9 +322,9 @@ end EFunction
 
 namespace AutoDiffTree
 #check AutoDiffTree.DiffTree.mk
-def add {α : Type u} [Inhabited α] [Add α] (shape : List Nat) (x y : AutoDiffTree α α shape): AutoDiffTree α α shape :=
+def add {α : Type u} [Inhabited α] [Add α] {shape : List Nat} (x y : AutoDiffTree α α shape): AutoDiffTree α α shape :=
     ⟨AutoDiffTree.DiffTree.mk #[⟨shape, x.1⟩, ⟨shape, y.1⟩] ⟨#[shape, shape], EFunction.add α shape⟩, sorry⟩
-def mul {α : Type u} [Inhabited α] [Mul α] (shape : List Nat) (x y : AutoDiffTree α α shape): AutoDiffTree α α shape :=
+def mul {α : Type u} [Inhabited α] [Mul α] {shape : List Nat} (x y : AutoDiffTree α α shape): AutoDiffTree α α shape :=
     ⟨AutoDiffTree.DiffTree.mk #[⟨shape, x.1⟩, ⟨shape, y.1⟩] ⟨#[shape, shape], EFunction.mul α shape⟩, sorry⟩
 
 end AutoDiffTree
