@@ -88,6 +88,26 @@ def ShapedVector.get {Shape : Type v} (ShapedType : Shape → Type u) (shapes : 
             simp [← this]
         exact s.shapedArray[i].snd
 
+@[simp]
+instance {Shape : Type v} {α : Shape → Type u} {shapes : Array Shape} : Membership (Σ shape, α shape) (ShapedVector α shapes) :=
+    ⟨fun X y => y ∈ X.shapedArray⟩
+
+def ShapedVector.map {Shape : Type v} {α : Shape → Type u} {β : Shape → Type w} {shapes : Array Shape} (f : {s : Shape} → α s → β s) :
+    ShapedVector α shapes → ShapedVector β shapes := sorry
+def ShapedVector.map' {Shape : Type v} {α : Shape → Type u} {β : Shape → Type w} {shapes : Array Shape} :
+    (v : ShapedVector α shapes) → (f : {s : Shape} → Subtype (fun x : α s => ⟨s, x⟩ ∈ v) → β s) → ShapedVector β shapes := sorry
+
+theorem womp {Shape : Type v} {α : Shape → Type u} {shapes : Array Shape} {s : Shape} (X : ShapedVector α shapes) (y : α s) [SizeOf (α s)] (h : ⟨s, y⟩ ∈ X):
+    sizeOf y < sizeOf X := by
+match X with
+| ⟨arr, H⟩ =>
+    simp at h
+    have :  @sizeOf ((s_1 : Shape) × α s_1) (Sigma._sizeOf_inst α) ⟨s, y⟩  < sizeOf arr := Array.sizeOf_lt_of_mem h
+    have : @sizeOf ((s_1 : Shape) × α s_1) (Sigma._sizeOf_inst α) ⟨s, y⟩  = 1 + sizeOf s + sizeOf y := by rfl
+    simp
+    simp at this
+    omega
+
 abbrev ShapedNArrayVector (α : Type u) := ShapedVector (NArray α)
 
 /-
@@ -114,6 +134,58 @@ structure EFunction (α : Type u) (β : Type v) (shapes : Array (List Nat)) (out
 -/
 def EFunction.const (α : Type u) (β : Type v) (shape : List Nat) (val : NArray α shape) : EFunction α β #[] shape :=
     ⟨#[], fun _ => ⟨val, ⟨#[], rfl⟩⟩, fun _ _ _ => ⟨#[], rfl⟩⟩
+
+inductive ShapedTree {Shape : Type v} (ShapedType : Shape → Type u) : List Shape → Shape → Type (max u v) where
+| leaf {outShape : Shape} (data : ShapedType outShape) : ShapedTree ShapedType [] outShape
+| cons (parent : ShapedTree ShapedType shapes₀ shape₀) (tree : ShapedTree ShapedType shapes outShape) : ShapedTree ShapedType (shape₀ :: shapes) outShape
+
+def ShapedTree.map {Shape : Type v} {α : Shape → Type u} {β : Shape → Type w} {shapes : List Shape} {outShape : Shape}
+    (f : {s : Shape} → α s → β s) :
+    ShapedTree α shapes outShape → ShapedTree β shapes outShape
+| leaf data => leaf (f data)
+| cons parent tree => cons (parent.map f) (tree.map f)
+
+
+def ShapedTree.parents {Shape : Type v} {α : Shape → Type u} {shapes : List Shape} {outShape : Shape} :
+    ShapedTree α shapes outShape → ShapedVector (fun x => Σ s, ShapedTree α s x) shapes.toArray := sorry
+
+def ShapedTree.root {Shape : Type v} {α : Shape → Type u} {shapes : List Shape} {outShape : Shape} :
+    ShapedTree α shapes outShape → α outShape := sorry
+
+def ShapedTree.set_root {Shape : Type v} {α : Shape → Type u} {shapes : List Shape} {outShape : Shape} :
+    ShapedTree α shapes outShape → α outShape → ShapedTree α shapes outShape := sorry
+
+def ShapedTree.set_parents {Shape : Type v} {α : Shape → Type u} {shapes : List Shape} {outShape : Shape} :
+    ShapedTree α shapes outShape → ShapedVector (fun x => Σ s, ShapedTree α s x) shapes.toArray → ShapedTree α shapes outShape := sorry
+
+def ShapedTree.mk {Shape : Type v} {α : Shape → Type u} {shapes : List Shape} {outShape : Shape} :
+    ShapedVector (fun x => Σ s, ShapedTree α s x) shapes.toArray → α outShape → ShapedTree α shapes outShape := sorry
+
+def ShapedTree.acc_map {Shape : Type v} {α : Shape → Type u} {β : Shape → Type w} {shapes : List Shape} {outShape : Shape}
+    (base : {s : Shape} → α s → β s) (acc : {s : List Shape} → {o : Shape} → ShapedVector (fun x => Σ q, ShapedTree β q x) s.toArray → α o → β o) :
+    ShapedTree α shapes outShape → ShapedTree β shapes outShape
+| leaf data => leaf (base data)
+| x =>
+    let new_parents := x.parents.map' (fun {s} ⟨⟨ss, y⟩, hy⟩ => ⟨ss, y.acc_map base acc⟩)
+    let new_root := acc new_parents x.root
+    mk new_parents new_root
+termination_by
+    x => sizeOf x
+decreasing_by
+    simp_wf
+    have h₁ : sizeOf (@Sigma.mk (List Shape) (fun s_1 => ShapedTree α s_1 s) ss y) < sizeOf x.parents := by
+        have := Array.sizeOf_lt_of_mem hy
+        simp at this
+        simp
+        have : sizeOf x.parents.shapedArray ≤ sizeOf x.parents := by
+            cases x.parents
+            simp
+        omega
+    have h₂ : sizeOf x.parents ≤ sizeOf x := sorry
+    have h₃ : sizeOf (@Sigma.mk (List Shape) (fun s_1 => ShapedTree α s_1 s) ss y) = 1 + sizeOf ss + sizeOf y := by simp only [Sigma.mk.sizeOf_spec]
+    omega
+
+-- todo add a version of attach or attach_map for shapedvector so we can prove decreasing
 
 /- Data carrying part of ComputedAutoDiffTree
 -/
