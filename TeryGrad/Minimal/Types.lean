@@ -80,7 +80,7 @@ def ShapedVector.hasShape {Shape : Type v} {ShapedType : Shape → Type u} {shap
         simp [ShapedVector.shapedVector, ← s.shapesMatch]
         rfl
 
-def ShapedVector.get {Shape : Type v} (ShapedType : Shape → Type u) (shapes : Array Shape) (s : ShapedVector ShapedType shapes) (i : Fin shapes.size) :
+def ShapedVector.get {Shape : Type v} {ShapedType : Shape → Type u} {shapes : Array Shape} (s : ShapedVector ShapedType shapes) (i : Fin shapes.size) :
     ShapedType shapes[i] := by
         rw [← s.hasShape i]
         have : shapes.size = s.shapedArray.size := by
@@ -92,6 +92,8 @@ def ShapedVector.get {Shape : Type v} (ShapedType : Shape → Type u) (shapes : 
 instance {Shape : Type v} {α : Shape → Type u} {shapes : Array Shape} : Membership (Σ shape, α shape) (ShapedVector α shapes) :=
     ⟨fun X y => y ∈ X.shapedArray⟩
 
+def ShapedVector.mk_shaped {Shape : Type v} (α : Shape → Type u) (shapes : Array Shape) (f : (x : Fin shapes.size) → α (shapes.get x.val x.isLt)) :
+    ShapedVector α shapes := sorry
 def ShapedVector.map {Shape : Type v} {α : Shape → Type u} {β : Shape → Type w} {shapes : Array Shape} (f : {s : Shape} → α s → β s) :
     ShapedVector α shapes → ShapedVector β shapes := sorry
 def ShapedVector.map' {Shape : Type v} {α : Shape → Type u} {β : Shape → Type w} {shapes : Array Shape} :
@@ -135,34 +137,37 @@ structure EFunction (α : Type u) (β : Type v) (shapes : Array (List Nat)) (out
 def EFunction.const (α : Type u) (β : Type v) (shape : List Nat) (val : NArray α shape) : EFunction α β #[] shape :=
     ⟨#[], fun _ => ⟨val, ⟨#[], rfl⟩⟩, fun _ _ _ => ⟨#[], rfl⟩⟩
 
-inductive ShapedTree {Shape : Type v} (ShapedType : Shape → Type u) : List Shape → Shape → Type (max u v) where
-| leaf {outShape : Shape} (data : ShapedType outShape) : ShapedTree ShapedType [] outShape
+inductive ShapedTree {Shape : Type v} (ShapedType : List Shape → Shape → Type u) : List Shape → Shape → Type (max u v) where
+| leaf {outShape : Shape} (data : ShapedType [] outShape) : ShapedTree ShapedType [] outShape
 | cons (parent : ShapedTree ShapedType shapes₀ shape₀) (tree : ShapedTree ShapedType shapes outShape) : ShapedTree ShapedType (shape₀ :: shapes) outShape
 
-def ShapedTree.map {Shape : Type v} {α : Shape → Type u} {β : Shape → Type w} {shapes : List Shape} {outShape : Shape}
-    (f : {s : Shape} → α s → β s) :
+def ShapedTree.map {Shape : Type v} {α : List Shape → Shape → Type u} {β : List Shape → Shape → Type w} {shapes : List Shape} {outShape : Shape}
+    (f : {ss : List Shape} → {s : Shape} → α ss s → β ss s) :
     ShapedTree α shapes outShape → ShapedTree β shapes outShape
 | leaf data => leaf (f data)
 | cons parent tree => cons (parent.map f) (tree.map f)
 
 
-def ShapedTree.parents {Shape : Type v} {α : Shape → Type u} {shapes : List Shape} {outShape : Shape} :
+def ShapedTree.parents {Shape : Type v} {α : List Shape → Shape → Type u} {shapes : List Shape} {outShape : Shape} :
     ShapedTree α shapes outShape → ShapedVector (fun x => Σ s, ShapedTree α s x) shapes.toArray := sorry
 
-def ShapedTree.root {Shape : Type v} {α : Shape → Type u} {shapes : List Shape} {outShape : Shape} :
-    ShapedTree α shapes outShape → α outShape := sorry
+def ShapedTree.root {Shape : Type v} {α : List Shape → Shape → Type u} {shapes : List Shape} {outShape : Shape} :
+    ShapedTree α shapes outShape → α shapes outShape := sorry
 
-def ShapedTree.set_root {Shape : Type v} {α : Shape → Type u} {shapes : List Shape} {outShape : Shape} :
-    ShapedTree α shapes outShape → α outShape → ShapedTree α shapes outShape := sorry
+def ShapedTree.set_root {Shape : Type v} {α : List Shape → Shape → Type u} {shapes : List Shape} {outShape : Shape} :
+    ShapedTree α shapes outShape → α shapes outShape → ShapedTree α shapes outShape := sorry
 
-def ShapedTree.set_parents {Shape : Type v} {α : Shape → Type u} {shapes : List Shape} {outShape : Shape} :
+def ShapedTree.set_parents {Shape : Type v} {α : List Shape → Shape → Type u} {shapes : List Shape} {outShape : Shape} :
     ShapedTree α shapes outShape → ShapedVector (fun x => Σ s, ShapedTree α s x) shapes.toArray → ShapedTree α shapes outShape := sorry
 
-def ShapedTree.mk {Shape : Type v} {α : Shape → Type u} {shapes : List Shape} {outShape : Shape} :
-    ShapedVector (fun x => Σ s, ShapedTree α s x) shapes.toArray → α outShape → ShapedTree α shapes outShape := sorry
+def ShapedTree.mk {Shape : Type v} {α : List Shape → Shape → Type u} {shapes : List Shape} {outShape : Shape} :
+    ShapedVector (fun x => Σ s, ShapedTree α s x) shapes.toArray → α shapes outShape → ShapedTree α shapes outShape := sorry
 
-def ShapedTree.acc_map {Shape : Type v} {α : Shape → Type u} {β : Shape → Type w} {shapes : List Shape} {outShape : Shape}
-    (base : {s : Shape} → α s → β s) (acc : {s : List Shape} → {o : Shape} → ShapedVector (fun x => Σ q, ShapedTree β q x) s.toArray → α o → β o) :
+
+def ShapedTree.sizeOf_parents_le_sizeOf {Shape : Type v} {α : List Shape → Shape → Type u} {shapes : List Shape} {outShape : Shape} [SizeOf (ShapedTree α shapes outShape)] (x : ShapedTree α shapes outShape) : sizeOf x.parents ≤ sizeOf x := sorry
+
+def ShapedTree.acc_map {Shape : Type v} {α : List Shape → Shape → Type u} {β : List Shape → Shape → Type w} {shapes : List Shape} {outShape : Shape}
+    (base : {ss : List Shape} → {s : Shape} → α ss s → β ss s) (acc : {s : List Shape} → {o : Shape} → ShapedVector (fun x => Σ q, ShapedTree β q x) s.toArray → α s o → β s o) :
     ShapedTree α shapes outShape → ShapedTree β shapes outShape
 | leaf data => leaf (base data)
 | x =>
@@ -181,10 +186,58 @@ decreasing_by
             cases x.parents
             simp
         omega
-    have h₂ : sizeOf x.parents ≤ sizeOf x := sorry
+    have h₂ : sizeOf x.parents ≤ sizeOf x := sizeOf_parents_le_sizeOf x
     have h₃ : sizeOf (@Sigma.mk (List Shape) (fun s_1 => ShapedTree α s_1 s) ss y) = 1 + sizeOf ss + sizeOf y := by simp only [Sigma.mk.sizeOf_spec]
     omega
 
+structure AutoDiffNode (α : Type u) (β : Type v) (shapes : List (List Nat)) (outShape : List Nat) where
+    (ctx : EFunction α β shapes.toArray outShape)
+    (data : NArray α outShape)
+
+
+structure ForwardedAutoDiffNode (α : Type u) (β : Type v) (shapes : List (List Nat)) (outShape : List Nat) extends AutoDiffNode α β shapes outShape where
+    (saved_tensors : ShapedVector (NArray β) ctx.saveShapes)
+
+structure ComputedAutoDiffNode (α : Type u) (β : Type v) (shapes : List (List Nat)) (outShape : List Nat) extends ForwardedAutoDiffNode α β shapes outShape where
+    (grad : NArray β outShape)
+
+def ShapedTree.forward {α : Type u} {β : Type v} {shapes : List (List Nat)} {shape : List Nat} : ShapedTree (AutoDiffNode α β) shapes shape → ShapedTree (ForwardedAutoDiffNode α β) shapes shape
+| leaf tensor => leaf ⟨tensor, (tensor.ctx.forward ⟨#[], rfl⟩).2⟩
+| x =>
+    let new_parents : ShapedVector (fun x => Σ ss, ShapedTree (ForwardedAutoDiffNode α β) ss x) shapes.toArray := x.parents.map' (fun {s} ⟨⟨ss, y⟩, hy⟩ => ⟨ss, y.forward⟩)
+    let ⟨data, saved_tensors⟩ := x.root.ctx.forward (new_parents.map (fun x => x.2.root.data))
+    let new_root : ForwardedAutoDiffNode α β shapes shape := ⟨{x.root with data := data}, saved_tensors⟩
+    mk new_parents new_root
+termination_by
+    x => sizeOf x
+decreasing_by
+    have h₁ : sizeOf (@Sigma.mk (List (List Nat)) (fun s_1 => ShapedTree (AutoDiffNode α β) s_1 s) ss y) < sizeOf x.parents := by
+        have := Array.sizeOf_lt_of_mem hy
+        simp at this
+        simp
+        have : sizeOf x.parents.shapedArray ≤ sizeOf x.parents := by
+            cases x.parents
+            simp
+        omega
+    have h₂ : @sizeOf (ShapedVector (fun x => (s : List (List Nat)) × ShapedTree (AutoDiffNode α β) s x) shapes.toArray) (ShapedVector._sizeOf_inst (fun x => (s : List (List Nat)) × ShapedTree (AutoDiffNode α β) s x) shapes.toArray) x.parents ≤ sizeOf x := sorry --sizeOf_parents_le_sizeOf x
+    have h₃ : sizeOf (@Sigma.mk (List (List Nat)) (fun s_1 => ShapedTree (AutoDiffNode α β) s_1 s) ss y) = 1 + sizeOf ss + sizeOf y := by simp only [Sigma.mk.sizeOf_spec]
+    simp at h₁
+    omega
+
+def ShapedTree.backward {α : Type u} {β : Type v} {shapes : List (List Nat)} {shape : List Nat} : ShapedTree (ForwardedAutoDiffNode α β) shapes shape → NArray β shape → ShapedTree (ComputedAutoDiffNode α β) shapes shape
+| leaf tensor, grad_output => leaf ⟨tensor, grad_output⟩
+| x, grad_output =>
+    let root := x.root
+    let grads := root.ctx.backward (x.parents.map (fun x => x.2.root.data)) root.saved_tensors grad_output
+    let new_parents : ShapedVector (fun x => Σ ss, ShapedTree (ComputedAutoDiffNode α β) ss x) shapes.toArray :=
+        ShapedVector.mk_shaped (fun x => Σ ss, ShapedTree (ComputedAutoDiffNode α β) ss x) shapes.toArray (fun i : Fin (shapes.toArray.size) =>
+        (⟨_, (x.parents.get i).2.backward (grads.get i)⟩ : (fun x => Σ ss, ShapedTree (ComputedAutoDiffNode α β) ss x) (shapes.toArray.get i.val i.isLt))
+    )
+    mk new_parents ⟨root, grad_output⟩
+termination_by
+    x => sizeOf x
+decreasing_by
+    sorry
 -- todo add a version of attach or attach_map for shapedvector so we can prove decreasing
 
 /- Data carrying part of ComputedAutoDiffTree
